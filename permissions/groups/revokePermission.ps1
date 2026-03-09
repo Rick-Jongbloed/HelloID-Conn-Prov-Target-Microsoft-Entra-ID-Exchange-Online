@@ -103,6 +103,11 @@ function Get-MSEntraAccessToken {
         $signature = $rsa.SignData([Text.Encoding]::UTF8.GetBytes($signatureInput), 'SHA256')
         $base64Signature = [System.Convert]::ToBase64String($signature).Replace('+', '-').Replace('/', '_').Replace('=', '')
 
+        # Ensure the certificate has a private key
+        if (-not $Certificate.HasPrivateKey -or -not $Certificate.PrivateKey) {
+            throw "The certificate does not have a private key."
+        }
+
         # Create the JWT token
         $jwtToken = "$($base64Header).$($base64Payload).$($base64Signature)"
 
@@ -173,17 +178,20 @@ try {
             Headers = @{'Authorization' = "Bearer $($entraToken)" }
         }
         $correlatedAccountEntra = Invoke-RestMethod @splatGetEntraUser -Verbose:$false
-    } catch {
+    }
+    catch {
         if ($_.Exception.Response.StatusCode -eq 404) {
             $correlatedAccountEntra = $null
-        } else {
+        }
+        else {
             throw $_
         }
     }
 
     if ($null -ne $correlatedAccountEntra) {
         $action = 'RevokePermission'
-    } else {
+    }
+    else {
         $action = 'NotFound'
     }
 
@@ -195,15 +203,16 @@ try {
 
             $baseUri = "https://graph.microsoft.com/"
             $revokePermissionSplatParams = @{
-                Uri         = "$($baseUri)/v1.0/groups/$($actionContext.References.Permission.Id)/members/$($actionContext.References.Account)/`$ref"
-                Headers     = $headers
-                Method      = "DELETE"
-                Verbose     = $false
+                Uri     = "$($baseUri)/v1.0/groups/$($actionContext.References.Permission.Id)/members/$($actionContext.References.Account)/`$ref"
+                Headers = $headers
+                Method  = "DELETE"
+                Verbose = $false
             }
             if (-not($actionContext.DryRun -eq $true)) {
                 Write-Information "Revoking MS-Entra-Exo permission: [$($actionContext.PermissionDisplayName)] - [$($actionContext.References.Permission.Id)]"
                 $null = Invoke-RestMethod @revokePermissionSplatParams
-            } else {
+            }
+            else {
                 Write-Information "[DryRun] Revoke MS-Entra-Exo permission: [$($actionContext.PermissionDisplayName)] - [$($actionContext.References.Permission.Id)], will be executed during enforcement"
             }
 
@@ -216,15 +225,16 @@ try {
 
         'NotFound' {
             Write-Information "MS-Entra account: [$($actionContext.References.Account)] could not be found, possibly indicating that it already has been deleted"
-            $outputContext.Success  = $true
+            $outputContext.Success = $true
             $outputContext.AuditLogs.Add([PSCustomObject]@{
-                Message = "MS-Entra-Exo account: [$($actionContext.References.Account)] could not be found, possibly indicating that it already has been deleted"
-                IsError = $false
-            })
+                    Message = "MS-Entra-Exo account: [$($actionContext.References.Account)] could not be found, possibly indicating that it already has been deleted"
+                    IsError = $false
+                })
             break
         }
     }
-} catch {
+}
+catch {
     $ex = $PSItem
     if ($($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or
         $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
@@ -233,20 +243,22 @@ try {
             $auditMessage = "Skipped revoking group [$($actionContext.PermissionDisplayName)] with id [$($actionContext.References.Permission.id)] from account with AccountReference: $($actionContext.References.Account | ConvertTo-Json). Reason: User is already no longer a member or the group no longer exists."
             $auditError = $false
             $outputContext.success = $true
-        } else {
+        }
+        else {
             $auditMessage = "Error $($actionMessage). Error: $($errorObj.FriendlyMessage)"
             $auditError = $true
             Write-Warning "Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
             $outputContext.success = $false
         }
-    } else {
+    }
+    else {
         $auditMessage = "Error $($actionMessage). Error: $($ex.Exception.Message)"
         $auditError = $true
         Write-Warning "Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
         $outputContext.success = $false
     }
     $outputContext.AuditLogs.Add([PSCustomObject]@{
-        Message = $auditMessage
-        IsError = $auditError
-    })
+            Message = $auditMessage
+            IsError = $auditError
+        })
 }

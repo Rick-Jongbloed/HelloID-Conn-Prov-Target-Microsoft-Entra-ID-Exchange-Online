@@ -106,6 +106,11 @@ function Get-MSEntraAccessToken {
         $signature = $rsa.SignData([Text.Encoding]::UTF8.GetBytes($signatureInput), 'SHA256')
         $base64Signature = [System.Convert]::ToBase64String($signature).Replace('+', '-').Replace('/', '_').Replace('=', '')
 
+        # Ensure the certificate has a private key
+        if (-not $Certificate.HasPrivateKey -or -not $Certificate.PrivateKey) {
+            throw "The certificate does not have a private key."
+        }
+
         # Create the JWT token
         $jwtToken = "$($base64Header).$($base64Payload).$($base64Signature)"
 
@@ -178,10 +183,12 @@ try {
             Headers = @{'Authorization' = "Bearer $($entraToken)" }
         }
         $correlatedAccountEntra = Invoke-RestMethod @splatGetEntraUser -Verbose:$false
-    } catch {
+    }
+    catch {
         if ($_.Exception.Response.StatusCode -eq 404) {
             throw "Entra Account [$($actionContext.References.Account)] could not be found, possibly indicating that it could be deleted"
-        } else {
+        }
+        else {
             throw $_
         }
     }
@@ -189,10 +196,10 @@ try {
     # Microsoft docs: https://learn.microsoft.com/nl-nl/graph/api/emailauthenticationmethod-get?view=graph-rest-1.0&tabs=http
     $actionMessage = "querying email authentication methods for account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)"
     $splatGetCurrentEmailAuthenticationMethods = @{
-        Uri         = "https://graph.microsoft.com/v1.0/users/$($actionContext.References.Account)/authentication/emailMethods"
-        Headers     = $headers
-        Method      = 'GET'
-        Verbose     = $false
+        Uri     = "https://graph.microsoft.com/v1.0/users/$($actionContext.References.Account)/authentication/emailMethods"
+        Headers = $headers
+        Method  = 'GET'
+        Verbose = $false
     }
     $currentEmailAuthenticationMethods = (Invoke-RestMethod @splatGetCurrentEmailAuthenticationMethods).Value
     $currentEmailAuthenticationMethod = ($currentEmailAuthenticationMethods | Where-Object { $_.id -eq "$($actionContext.References.Permission.Reference)" }).emailAddress
@@ -202,18 +209,20 @@ try {
         if (($currentEmailAuthenticationMethod | Measure-Object).count -eq 0) {
             $action = 'GrantPermission'
         }
-         elseif ($onlySetEmailWhenEmpty -eq $true) {
+        elseif ($onlySetEmailWhenEmpty -eq $true) {
             $action = "ExistingData-SkipUpdate"
         }
         elseif (($currentEmailAuthenticationMethod | Measure-Object).count -eq 1) {
             $currentEmailAuthenticationMethod = $currentEmailAuthenticationMethod.replace(" ", "")
             if ($currentEmailAuthenticationMethod -ne $email) {
                 $action = "UpdatePermission"
-            } else {
+            }
+            else {
                 $action = 'NoChanges'
             }
         }
-    } else {
+    }
+    else {
         $action = 'NotFound'
     }
 
@@ -224,25 +233,26 @@ try {
             $actionMessage = "creating email authentication method [email] for account to [$email]"
             Write-Information $actionMessage
             $createEmailAuthenticationMethodSplatParams = @{
-                Uri      = "https://graph.microsoft.com/v1.0/users/$($actionContext.References.Account)/authentication/emailMethods"
-                Method   = 'POST'
-                Body     =  @{
+                Uri     = "https://graph.microsoft.com/v1.0/users/$($actionContext.References.Account)/authentication/emailMethods"
+                Method  = 'POST'
+                Body    = @{
                     'emailAddress' = $email
                 } | ConvertTo-Json -Depth 10
                 Headers = $headers
-                Verbose  = $false
+                Verbose = $false
             }
             if (-Not($actionContext.DryRun -eq $true)) {
                 $null = Invoke-RestMethod @createEmailAuthenticationMethodSplatParams
-            } else {
+            }
+            else {
                 Write-Information "[DryRun] Grant MS-Entra-Exo EmailAutenticationMethod: [email] - [$($actionContext.References.Permission.Reference)], will be executed during enforcement"
             }
 
             $outputContext.Success = $true
             $outputContext.AuditLogs.Add([PSCustomObject]@{
-                Message = "Grant EmailAutenticationMethod permission [$($actionContext.PermissionDisplayName)] was successful"
-                IsError = $false
-            })
+                    Message = "Grant EmailAutenticationMethod permission [$($actionContext.PermissionDisplayName)] was successful"
+                    IsError = $false
+                })
             break
         }
 
@@ -251,9 +261,9 @@ try {
             $actionMessage = "updating email authentication method [email] for account to [$email]"
             Write-Information $actionMessage
             $updateEmailAuthenticationMethodSplatParams = @{
-                Uri    = "https://graph.microsoft.com/v1.0/users/$($actionContext.References.Account)/authentication/emailMethods/$($actionContext.References.Permission.Reference)"
-                Method = 'PATCH'
-                Body   =  @{
+                Uri     = "https://graph.microsoft.com/v1.0/users/$($actionContext.References.Account)/authentication/emailMethods/$($actionContext.References.Permission.Reference)"
+                Method  = 'PATCH'
+                Body    = @{
                     'emailAddress' = $email
                 } | ConvertTo-Json -Depth 10
                 Verbose = $false
@@ -269,9 +279,9 @@ try {
 
             $outputContext.Success = $true
             $outputContext.AuditLogs.Add([PSCustomObject]@{
-                Message = "Update EmailAutenticationMethod permission [$($actionContext.PermissionDisplayName)] was successful"
-                IsError = $false
-            })
+                    Message = "Update EmailAutenticationMethod permission [$($actionContext.PermissionDisplayName)] was successful"
+                    IsError = $false
+                })
             break
         }
 
@@ -302,13 +312,14 @@ try {
             Write-Information "MS-Entra account: [email] could not be found, possibly indicating that it already has been deleted"
             $outputContext.Success = $false
             $outputContext.AuditLogs.Add([PSCustomObject]@{
-                Message = "MS-Entra-Exo account: [$($actionContext.References.Account)] could not be found, possibly indicating that it already has been deleted"
-                IsError = $true
-            })
+                    Message = "MS-Entra-Exo account: [$($actionContext.References.Account)] could not be found, possibly indicating that it already has been deleted"
+                    IsError = $true
+                })
             break
         }
     }
-} catch {
+}
+catch {
     $outputContext.success = $false
     $ex = $PSItem
     if ($($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or
@@ -316,12 +327,13 @@ try {
         $errorObj = Resolve-MS-Entra-ExoError -ErrorObject $ex
         $auditMessage = "Error $($actionMessage). Error: $($errorObj.FriendlyMessage)"
         Write-Warning "Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
-    } else {
+    }
+    else {
         $auditMessage = "Error $($actionMessage). Error: $($ex.Exception.Message)"
         Write-Warning "Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
     }
     $outputContext.AuditLogs.Add([PSCustomObject]@{
-        Message = $auditMessage
-        IsError = $true
-    })
+            Message = $auditMessage
+            IsError = $true
+        })
 }

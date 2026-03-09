@@ -28,7 +28,8 @@ function Resolve-MS-Entra-ExoError {
         }
         if (-not [string]::IsNullOrEmpty($ErrorObject.ErrorDetails.Message)) {
             $httpErrorObj.ErrorDetails = $ErrorObject.ErrorDetails.Message
-        } elseif ($ErrorObject.Exception.GetType().FullName -eq 'System.Net.WebException') {
+        }
+        elseif ($ErrorObject.Exception.GetType().FullName -eq 'System.Net.WebException') {
             if ($null -ne $ErrorObject.Exception.Response) {
                 $streamReaderResponse = [System.IO.StreamReader]::new($ErrorObject.Exception.Response.GetResponseStream()).ReadToEnd()
                 if (-not [string]::IsNullOrEmpty($streamReaderResponse)) {
@@ -40,15 +41,19 @@ function Resolve-MS-Entra-ExoError {
             $errorDetailsObject = ($httpErrorObj.ErrorDetails | ConvertFrom-Json)
             if ($errorDetailsObject.error_description) {
                 $httpErrorObj.FriendlyMessage = $errorDetailsObject.error_description
-            } elseif ($errorDetailsObject.error.message) {
+            }
+            elseif ($errorDetailsObject.error.message) {
                 $httpErrorObj.FriendlyMessage = "$($errorDetailsObject.error.code): $($errorDetailsObject.error.message)"
-            } elseif ($errorDetailsObject.error.details.message) {
+            }
+            elseif ($errorDetailsObject.error.details.message) {
                 $httpErrorObj.FriendlyMessage = "$($errorDetailsObject.error.details.code): $($errorDetailsObject.details.message)"
-            } else {
+            }
+            else {
                 $httpErrorObj.FriendlyMessage = $httpErrorObj.ErrorDetails
             }
 
-        } catch {
+        }
+        catch {
             $httpErrorObj.FriendlyMessage = $httpErrorObj.ErrorDetails
         }
         Write-Output $httpErrorObj
@@ -103,6 +108,11 @@ function Get-MSEntraAccessToken {
         $signature = $rsa.SignData([Text.Encoding]::UTF8.GetBytes($signatureInput), 'SHA256')
         $base64Signature = [System.Convert]::ToBase64String($signature).Replace('+', '-').Replace('/', '_').Replace('=', '')
 
+        # Ensure the certificate has a private key
+        if (-not $Certificate.HasPrivateKey -or -not $Certificate.PrivateKey) {
+            throw "The certificate does not have a private key."
+        }
+
         # Create the JWT token
         $jwtToken = "$($base64Header).$($base64Payload).$($base64Signature)"
 
@@ -125,7 +135,8 @@ function Get-MSEntraAccessToken {
 
         $createEntraAccessTokenResponse = Invoke-RestMethod @createEntraAccessTokenSplatParams
         Write-Output $createEntraAccessTokenResponse.access_token
-    } catch {
+    }
+    catch {
         $PSCmdlet.ThrowTerminatingError($_)
     }
 }
@@ -137,7 +148,8 @@ function Get-MSEntraCertificate {
         $rawCertificate = [system.convert]::FromBase64String($actionContext.Configuration.AppCertificateBase64String)
         $certificate = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new($rawCertificate, $actionContext.Configuration.AppCertificatePassword, [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable)
         Write-Output $certificate
-    } catch {
+    }
+    catch {
         $PSCmdlet.ThrowTerminatingError($_)
     }
 }
@@ -199,7 +211,8 @@ try {
         if ([string]::IsNullOrEmpty($($actionContext.References.Account))) {
             throw 'The account reference could not be found'
         }
-    } else {
+    }
+    else {
         if ([string]::IsNullOrEmpty($correlationValue)) {
             throw 'The correlation value could not be found on the person'
         }
@@ -230,11 +243,13 @@ try {
             foreach ($fieldToCheckAccountValue in $fieldToCheck.Value.accountValue) {
                 if ($null -eq $filter) {
                     $filter = "$($fieldToCheck.Value.systemFieldName)/any(c:c eq '$($fieldToCheckAccountValue)')" 
-                } else {
+                }
+                else {
                     $filter = $filter + " OR $($fieldToCheck.Value.systemFieldName)/any(c:c eq '$($fieldToCheckAccountValue)')"
                 }
             }
-        } else {
+        }
+        else {
             $filter = "$($fieldToCheck.Value.systemFieldName) eq '$($fieldToCheck.Value.accountValue)'" 
         }
 
@@ -255,10 +270,12 @@ try {
             # Add headers after printing splat
             $splatGetEntraUser['Headers'] = $entraIDHeaders
             $correlatedAccount = (Invoke-RestMethod @splatGetEntraUser -Verbose:$false).Value
-        } catch {
+        }
+        catch {
             if ($_.Exception.Response.StatusCode -eq 404) {
                 throw "Entra Account [$($actionContext.References.Account)] could not be found, possibly indicating that it could be deleted"
-            } else {
+            }
+            else {
                 throw $_
             }
         }
@@ -269,7 +286,8 @@ try {
         if (@($correlatedAccount).count -gt 0) {
             if ($actionContext.Operation.ToLower() -ne 'create' -and $correlatedAccount.id -eq $actionContext.References.Account) {
                 Write-Information "Person is using property [$($fieldToCheck.Name)] with value [$($fieldToCheck.Value.accountValue)] themselves."
-            } else {
+            }
+            else {
                 Write-Information "Property [$($fieldToCheck.Name)] with value [$($fieldToCheck.Value.accountValue)] is not unique. In use by account with ID: $($correlatedAccount.id)"
                 [void]$outputContext.NonUniqueFields.Add($fieldToCheck.Name)
                 if (@($fieldToCheck.Value.keepInSyncWith).Count -ge 1) {
@@ -278,14 +296,16 @@ try {
                     }
                 }
             }
-        } elseif (@($correlatedAccount).count -eq 0) {
+        }
+        elseif (@($correlatedAccount).count -eq 0) {
             Write-Information "Property [$($fieldToCheck.Name)] with value [$($fieldToCheck.Value.accountValue)] is unique."
         }
     }
 
     # Set Success to true
     $outputContext.Success = $true
-} catch {
+}
+catch {
     $outputContext.Success = $false
     $ex = $PSItem
     if ($($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or
@@ -293,13 +313,15 @@ try {
         $errorObj = Resolve-MS-Entra-ExoError -ErrorObject $ex
         $auditMessage = "Error $($actionMessage). Error: $($errorObj.FriendlyMessage)"
         $warningMessage = "Error at Line [$($errorObj.ScriptLineNumber)]: $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
-    } else {
+    }
+    else {
         $auditMessage = "Error $($actionMessage). Error: $($ex.Exception.Message)"
         $warningMessage = "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
     }
     Write-Warning $warningMessage
     # Required to write an error as uniqueness check doesn't show auditlog
     Write-Error $auditMessage
-} finally {
+}
+finally {
     $outputContext.NonUniqueFields = @($outputContext.NonUniqueFields | Sort-Object -Unique)
 }

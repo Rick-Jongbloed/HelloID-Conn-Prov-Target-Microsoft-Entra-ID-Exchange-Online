@@ -106,6 +106,11 @@ function Get-MSEntraAccessToken {
         $signature = $rsa.SignData([Text.Encoding]::UTF8.GetBytes($signatureInput), 'SHA256')
         $base64Signature = [System.Convert]::ToBase64String($signature).Replace('+', '-').Replace('/', '_').Replace('=', '')
 
+        # Ensure the certificate has a private key
+        if (-not $Certificate.HasPrivateKey -or -not $Certificate.PrivateKey) {
+            throw "The certificate does not have a private key."
+        }
+
         # Create the JWT token
         $jwtToken = "$($base64Header).$($base64Payload).$($base64Signature)"
 
@@ -176,10 +181,12 @@ try {
             Headers = @{'Authorization' = "Bearer $($entraToken)" }
         }
         $correlatedAccountEntra = Invoke-RestMethod @splatGetEntraUser -Verbose:$false
-    } catch {
+    }
+    catch {
         if ($_.Exception.Response.StatusCode -eq 404) {
             throw "Entra Account [$($actionContext.References.Account)] could not be found, possibly indicating that it could be deleted"
-        } else {
+        }
+        else {
             throw $_
         }
     }
@@ -246,7 +253,8 @@ try {
                 $action = "NoChanges"
             }
         }
-    } else {
+    }
+    else {
         $action = 'NotFound'
     }
 
@@ -255,32 +263,32 @@ try {
     # Process
     switch ($action) {
         'GrantPermission' {
-                #region Create phoneAuthenticationMethod
-                # Microsoft docs: https://learn.microsoft.com/nl-nl/graph/api/authentication-post-phonemethods?view=graph-rest-1.0&tabs=http
-                $actionMessage = "creating phone authentication method [$($actionContext.References.Permission.Name)] for account to [$phoneNumber]"
-                Write-Information $actionMessage
-                $createPhoneAuthenticationMethodSplatParams = @{
-                    Uri     = "https://graph.microsoft.com/v1.0/users/$($actionContext.References.Account)/authentication/phoneMethods"
-                    Headers = $headers
-                    Method  = "POST"
-                    Body        = @{
-                        "phoneNumber" = $($phoneNumber)
-                        "phoneType"   = $($actionContext.References.Permission.Type)
-                    } | ConvertTo-Json -Depth 10
-                    Verbose = $false
-                }
-                if (-not($actionContext.DryRun -eq $true)) {
-                    $null = Invoke-RestMethod @createPhoneAuthenticationMethodSplatParams
-                }
-                else {
+            #region Create phoneAuthenticationMethod
+            # Microsoft docs: https://learn.microsoft.com/nl-nl/graph/api/authentication-post-phonemethods?view=graph-rest-1.0&tabs=http
+            $actionMessage = "creating phone authentication method [$($actionContext.References.Permission.Name)] for account to [$phoneNumber]"
+            Write-Information $actionMessage
+            $createPhoneAuthenticationMethodSplatParams = @{
+                Uri     = "https://graph.microsoft.com/v1.0/users/$($actionContext.References.Account)/authentication/phoneMethods"
+                Headers = $headers
+                Method  = "POST"
+                Body    = @{
+                    "phoneNumber" = $($phoneNumber)
+                    "phoneType"   = $($actionContext.References.Permission.Type)
+                } | ConvertTo-Json -Depth 10
+                Verbose = $false
+            }
+            if (-not($actionContext.DryRun -eq $true)) {
+                $null = Invoke-RestMethod @createPhoneAuthenticationMethodSplatParams
+            }
+            else {
                 Write-Information "[DryRun] Grant MS-Entra-Exo PhoneAuthenticationMethod: [$($actionContext.References.Permission.Type)] - [$($actionContext.References.Permission.Reference)], will be executed during enforcement"
             }
 
             $outputContext.Success = $true
             $outputContext.AuditLogs.Add([PSCustomObject]@{
-                Message = "Grant permission PhoneAuthenticationMethod [$($actionContext.PermissionDisplayName)] was successful"
-                IsError = $false
-            })
+                    Message = "Grant permission PhoneAuthenticationMethod [$($actionContext.PermissionDisplayName)] was successful"
+                    IsError = $false
+                })
         }
 
         'UpdatePermission' {
@@ -288,14 +296,14 @@ try {
             $actionMessage = "updating phone authentication method [$($actionContext.PermissionDisplayName)] for account to [$phoneNumber]"
             Write-Information $actionMessage
             $updatePhoneAuthenticationMethodSplatParams = @{
-                Uri         = "https://graph.microsoft.com/v1.0/users/$($actionContext.References.Account)/authentication/phoneMethods/$($actionContext.References.Permission.Reference)"
-                Headers     = $headers
-                Method      = "PATCH"
-                Body        =  @{
+                Uri     = "https://graph.microsoft.com/v1.0/users/$($actionContext.References.Account)/authentication/phoneMethods/$($actionContext.References.Permission.Reference)"
+                Headers = $headers
+                Method  = "PATCH"
+                Body    = @{
                     "phoneNumber" = $($phoneNumber)
                     "phoneType"   = $($actionContext.References.Permission.Type)
                 } | ConvertTo-Json -Depth 10
-                Verbose     = $false
+                Verbose = $false
             }
 
             if (-Not($actionContext.DryRun -eq $true)) {
@@ -307,9 +315,9 @@ try {
 
             $outputContext.Success = $true
             $outputContext.AuditLogs.Add([PSCustomObject]@{
-                Message = "Update PhoneAuthenticationMethod permission [$($actionContext.PermissionDisplayName)] was successful"
-                IsError = $false
-            })
+                    Message = "Update PhoneAuthenticationMethod permission [$($actionContext.PermissionDisplayName)] was successful"
+                    IsError = $false
+                })
             break
         }
 
@@ -340,13 +348,14 @@ try {
             Write-Information "MS-Entra account: [$($actionContext.References.Permission.Type)] could not be found, possibly indicating that it already has been deleted"
             $outputContext.Success = $false
             $outputContext.AuditLogs.Add([PSCustomObject]@{
-                Message = "MS-Entra-Exo account: [$($actionContext.References.Account)] could not be found, possibly indicating that it already has been deleted"
-                IsError = $true
-            })
+                    Message = "MS-Entra-Exo account: [$($actionContext.References.Account)] could not be found, possibly indicating that it already has been deleted"
+                    IsError = $true
+                })
             break
         }
     }
-} catch {
+}
+catch {
     $outputContext.success = $false
     $ex = $PSItem
     if ($($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or
@@ -354,12 +363,13 @@ try {
         $errorObj = Resolve-MS-Entra-ExoError -ErrorObject $ex
         $auditMessage = "Error $($actionMessage). Error: $($errorObj.FriendlyMessage)"
         Write-Warning "Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
-    } else {
+    }
+    else {
         $auditMessage = "Error $($actionMessage). Error: $($ex.Exception.Message)"
         Write-Warning "Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
     }
     $outputContext.AuditLogs.Add([PSCustomObject]@{
-        Message = $auditMessage
-        IsError = $true
-    })
+            Message = $auditMessage
+            IsError = $true
+        })
 }

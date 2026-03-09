@@ -23,7 +23,8 @@ function Resolve-MS-Entra-ExoError {
         }
         if (-not [string]::IsNullOrEmpty($ErrorObject.ErrorDetails.Message)) {
             $httpErrorObj.ErrorDetails = $ErrorObject.ErrorDetails.Message
-        } elseif ($ErrorObject.Exception.GetType().FullName -eq 'System.Net.WebException') {
+        }
+        elseif ($ErrorObject.Exception.GetType().FullName -eq 'System.Net.WebException') {
             if ($null -ne $ErrorObject.Exception.Response) {
                 $streamReaderResponse = [System.IO.StreamReader]::new($ErrorObject.Exception.Response.GetResponseStream()).ReadToEnd()
                 if (-not [string]::IsNullOrEmpty($streamReaderResponse)) {
@@ -35,15 +36,19 @@ function Resolve-MS-Entra-ExoError {
             $errorDetailsObject = ($httpErrorObj.ErrorDetails | ConvertFrom-Json)
             if ($errorDetailsObject.error_description) {
                 $httpErrorObj.FriendlyMessage = $errorDetailsObject.error_description
-            } elseif ($errorDetailsObject.error.message) {
+            }
+            elseif ($errorDetailsObject.error.message) {
                 $httpErrorObj.FriendlyMessage = "$($errorDetailsObject.error.code): $($errorDetailsObject.error.message)"
-            } elseif ($errorDetailsObject.error.details.message) {
+            }
+            elseif ($errorDetailsObject.error.details.message) {
                 $httpErrorObj.FriendlyMessage = "$($errorDetailsObject.error.details.code): $($errorDetailsObject.details.message)"
-            } else {
+            }
+            else {
                 $httpErrorObj.FriendlyMessage = $httpErrorObj.ErrorDetails
             }
 
-        } catch {
+        }
+        catch {
             $httpErrorObj.FriendlyMessage = $httpErrorObj.ErrorDetails
         }
         Write-Output $httpErrorObj
@@ -98,6 +103,11 @@ function Get-MSEntraAccessToken {
         $signature = $rsa.SignData([Text.Encoding]::UTF8.GetBytes($signatureInput), 'SHA256')
         $base64Signature = [System.Convert]::ToBase64String($signature).Replace('+', '-').Replace('/', '_').Replace('=', '')
 
+        # Ensure the certificate has a private key
+        if (-not $Certificate.HasPrivateKey -or -not $Certificate.PrivateKey) {
+            throw "The certificate does not have a private key."
+        }
+
         # Create the JWT token
         $jwtToken = "$($base64Header).$($base64Payload).$($base64Signature)"
 
@@ -120,7 +130,8 @@ function Get-MSEntraAccessToken {
 
         $createEntraAccessTokenResponse = Invoke-RestMethod @createEntraAccessTokenSplatParams
         Write-Output $createEntraAccessTokenResponse.access_token
-    } catch {
+    }
+    catch {
         $PSCmdlet.ThrowTerminatingError($_)
     }
 }
@@ -132,7 +143,8 @@ function Get-MSEntraCertificate {
         $rawCertificate = [system.convert]::FromBase64String($actionContext.Configuration.AppCertificateBase64String)
         $certificate = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new($rawCertificate, $actionContext.Configuration.AppCertificatePassword, [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable)
         Write-Output $certificate
-    } catch {
+    }
+    catch {
         $PSCmdlet.ThrowTerminatingError($_)
     }
 }
@@ -150,7 +162,8 @@ function ConvertTo-FlatObject {
     foreach ($property in $Object.PSObject.Properties) {
         $name = if ($Prefix) {
             "$Prefix.$($property.Name)"
-        } else {
+        }
+        else {
             $property.Name
         }
         if ($null -ne $property.Value -and $property.Value.GetType().FullName -eq 'System.Management.Automation.PSCustomObject') {
@@ -161,7 +174,8 @@ function ConvertTo-FlatObject {
                 # Set property name to lower case to ensure this doesn't trigger an update
                 $result[$subProperty.Name] = [string]$subProperty.Value
             }
-        } else {
+        }
+        else {
             $property.Value = $property.Value | Sort-Object
 
             $result[$name] = [string]$property.Value
@@ -193,12 +207,14 @@ function ConvertTo-EntraUpdateBody {
                     $body[$parentPropertyName] = @{}
                 }
                 $body[$parentPropertyName][$subPropertyName] = $Data.$parentPropertyName.$subPropertyName
-            } else {
+            }
+            else {
                 $body["$($property.Name)"] = $Data.$($property.Name)
             }
         }
         Write-Output $body
-    } catch {
+    }
+    catch {
         $PSCmdlet.ThrowTerminatingError($_)
     }
 }
@@ -211,7 +227,8 @@ function Convert-StringBooleanToBoolean {
     foreach ($property in $InputObject.PSObject.Properties) {
         if ($property.TypeNameOfValue -eq 'System.Management.Automation.PSCustomObject') {
             Convert-StringBooleanToBoolean -InputObject $property.Value
-        } else {
+        }
+        else {
             if ($property.Value -eq 'True' -or $property.Value -eq 'False') {
                 $InputObject."$($property.Name)" = [bool]::Parse($property.Value)
             }
@@ -251,10 +268,12 @@ try {
         }
         $correlatedAccountEntra = Invoke-RestMethod @splatGetEntraUser -Verbose:$false
         $outputContext.PreviousData = $correlatedAccountEntra | Select-Object -Property *
-    } catch {
+    }
+    catch {
         if ($_.Exception.Response.StatusCode -eq 404) {
             throw "Entra Account [$($actionContext.References.Account)] could not be found, possibly indicating that it could be deleted"
-        } else {
+        }
+        else {
             throw $_
         }
     }
@@ -281,7 +300,7 @@ try {
             $outputContext.AuditLogs.Add([PSCustomObject]@{
                     Message = 'An existing MS-Entra account was found, but no mailbox is associated with it. Updating Exchange Online skipped'
                     IsError = $false
-            })
+                })
         }
     }
 
@@ -293,10 +312,12 @@ try {
         }
         try {
             $previousManager = Invoke-RestMethod @splatGetEntraAccountManager
-        } catch {
+        }
+        catch {
             if ($_.ErrorDetails.Message -like "*Resource *manager* does not exist or one of its queried reference-property objects are not present.*") {
                 $previousManager = $null
-            } else {
+            }
+            else {
                 throw $_
             }
         }
@@ -335,7 +356,8 @@ try {
                 $mergedEmailAddresses = $mergedEmailAddresses | ForEach-Object {
                     if ($_ -cmatch '^SMTP:') {
                         $_.ToLower() -replace '^smtp:', 'smtp:'
-                    } else {
+                    }
+                    else {
                         $_
                     }
                 }
@@ -386,10 +408,12 @@ try {
         if ($previousManager.id -ne $actionContext.References.ManagerAccount) {
             if ($null -eq $actionContext.References.ManagerAccount) {
                 $actionList.Add('ClearManager')
-            } else {
+            }
+            else {
                 $actionList.Add('UpdateManager')
             }
-        } else {
+        }
+        else {
             $outputContext.PreviousData | Add-Member @{
                 managerId = $null
             } -Force
@@ -421,7 +445,8 @@ try {
                         Headers     = @{'Authorization' = "Bearer $($entraToken)" }
                     }
                     $null = Invoke-RestMethod @splatUpdateEntraAccount
-                } else {
+                }
+                else {
                     Write-Information "[DryRun] Update MS-Entra-Exo account with accountReference: [$($actionContext.References.Account)], will be executed during enforcement"
                 }
                 $outputContext.Success = $true
@@ -450,7 +475,8 @@ try {
                 if (-not($actionContext.DryRun -eq $true)) {
                     Write-Information "Updating MS-Entra-Exo account with accountReference: [$($actionContext.References.Account)]"
                     $null = Set-Mailbox @splatUpdateExoAccount -Verbose:$false -ErrorAction Stop
-                } else {
+                }
+                else {
                     Write-Information "[DryRun] Update MS-Entra-Exo account with accountReference: [$($actionContext.References.Account)], will be executed during enforcement"
                 }
                 $outputContext.Success = $true
@@ -476,7 +502,8 @@ try {
                 }
                 if (-not($actionContext.DryRun -eq $true)) {
                     $null = Invoke-RestMethod @splatSetEntraManager
-                } else {
+                }
+                else {
                     Write-Information "[DryRun] Update MS-Entra-Exo account with manager: [$($actionContext.References.ManagerAccount)], will be executed during enforcement"
                 }
                 $outputContext.AuditLogs.Add([PSCustomObject]@{
@@ -499,7 +526,8 @@ try {
                 }
                 if (-not($actionContext.DryRun -eq $true)) {
                     $null = Invoke-RestMethod @splatClearEntraManager
-                } else {
+                }
+                else {
                     Write-Information '[DryRun] Clear manager for MS-Entra-Exo account, will be executed during enforcement'
                 }
                 $outputContext.AuditLogs.Add([PSCustomObject]@{
@@ -523,7 +551,8 @@ try {
             }
         }
     }
-} catch {
+}
+catch {
     $outputContext.Success = $false
     $ex = $PSItem
     if ($($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or
@@ -531,7 +560,8 @@ try {
         $errorObj = Resolve-MS-Entra-ExoError -ErrorObject $ex
         $auditMessage = "Error $($actionMessage). Error: $($errorObj.FriendlyMessage)"
         Write-Warning "Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
-    } else {
+    }
+    else {
         $auditMessage = "Error $($actionMessage). Error: $($ex.Exception.Message)"
         Write-Warning "Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
     }
@@ -539,7 +569,8 @@ try {
             Message = $auditMessage
             IsError = $true
         })
-} finally {
+}
+finally {
     # Convert string booleans to actual booleans
     $null = Convert-StringBooleanToBoolean -InputObject $outputContext.Data
 

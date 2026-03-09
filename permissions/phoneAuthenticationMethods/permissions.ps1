@@ -8,8 +8,8 @@ $outputContext.Permissions.Add(
     @{
         DisplayName    = "phone authentication method - mobile"
         Identification = @{
-            Reference   = "3179e48a-750b-4051-897c-87b9720928f7"
-            Type = "mobile"
+            Reference = "3179e48a-750b-4051-897c-87b9720928f7"
+            Type      = "mobile"
         }
     }
 )
@@ -17,8 +17,8 @@ $outputContext.Permissions.Add(
     @{
         DisplayName    = "phone authentication method - alternateMobile"
         Identification = @{
-            Reference   = "b6332ec1-7057-4abe-9331-3d72feddfe41"
-            Type = "alternateMobile"
+            Reference = "b6332ec1-7057-4abe-9331-3d72feddfe41"
+            Type      = "alternateMobile"
         }
     }
 )
@@ -26,8 +26,8 @@ $outputContext.Permissions.Add(
     @{
         DisplayName    = "phone authentication method - office"
         Identification = @{
-            Reference   = "e37fc753-ff3b-4958-9484-eaa9425c82bc"
-            Type = "office"
+            Reference = "e37fc753-ff3b-4958-9484-eaa9425c82bc"
+            Type      = "office"
         }
     }
 )
