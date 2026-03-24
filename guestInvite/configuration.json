@@ -1,0 +1,76 @@
+[
+    {
+        "key": "TenantID",
+        "type": "input",
+        "defaultValue": "",
+        "templateOptions": {
+            "label": "App Registration Directory (tenant) ID",
+            "placeholder": "00000000-0000-0000-0000-000000000000",
+            "description": "",
+            "required": true
+        }
+    },
+    {
+        "key": "AppId",
+        "type": "input",
+        "defaultValue": "",
+        "templateOptions": {
+            "label": "App Registration Application (client) ID",
+            "placeholder": "00000000-0000-0000-0000-000000000000",
+            "description": "",
+            "required": true
+        }
+    },
+    {
+        "key": "AppCertificateBase64String",
+        "type": "input",
+        "defaultValue": "",
+        "templateOptions": {
+            "label": "App Registration Certificate Base 64 String",
+            "type": "password",
+            "placeholder": "WFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFg==",
+            "required": true
+        }
+    },
+    {
+        "key": "AppCertificatePassword",
+        "type": "input",
+        "defaultValue": "",
+        "templateOptions": {
+            "label": "App Registration Certificate Password",
+            "type": "password",
+            "placeholder": "P@ssw0rd!",
+            "required": true
+        }
+    },
+    {
+        "key": "deleteAccount",
+        "type": "checkbox",
+        "defaultValue": false,
+        "templateOptions": {
+            "label": "Delete the account when revoking the entitlement",
+            "description": "",
+            "required": false
+        }
+    },
+    {
+        "key": "setManagerOnCreate",
+        "type": "checkbox",
+        "defaultValue": false,
+        "templateOptions": {
+            "label": "Set manager when an account is created",
+            "description": "",
+            "required": false
+        }
+    },
+    {
+        "key": "updateManagerOnUpdate",
+        "type": "checkbox",
+        "defaultValue": false,
+        "templateOptions": {
+            "label": "Update manager when the account update operation is performed",
+            "description": "",
+            "required": false
+        }
+    }
+]

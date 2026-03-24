@@ -28,7 +28,8 @@ function Resolve-MS-Entra-ExoError {
         }
         if (-not [string]::IsNullOrEmpty($ErrorObject.ErrorDetails.Message)) {
             $httpErrorObj.ErrorDetails = $ErrorObject.ErrorDetails.Message
-        } elseif ($ErrorObject.Exception.GetType().FullName -eq 'System.Net.WebException') {
+        }
+        elseif ($ErrorObject.Exception.GetType().FullName -eq 'System.Net.WebException') {
             if ($null -ne $ErrorObject.Exception.Response) {
                 $streamReaderResponse = [System.IO.StreamReader]::new($ErrorObject.Exception.Response.GetResponseStream()).ReadToEnd()
                 if (-not [string]::IsNullOrEmpty($streamReaderResponse)) {
@@ -40,15 +41,19 @@ function Resolve-MS-Entra-ExoError {
             $errorDetailsObject = ($httpErrorObj.ErrorDetails | ConvertFrom-Json)
             if ($errorDetailsObject.error_description) {
                 $httpErrorObj.FriendlyMessage = $errorDetailsObject.error_description
-            } elseif ($errorDetailsObject.error.message) {
+            }
+            elseif ($errorDetailsObject.error.message) {
                 $httpErrorObj.FriendlyMessage = "$($errorDetailsObject.error.code): $($errorDetailsObject.error.message)"
-            } elseif ($errorDetailsObject.error.details.message) {
+            }
+            elseif ($errorDetailsObject.error.details.message) {
                 $httpErrorObj.FriendlyMessage = "$($errorDetailsObject.error.details.code): $($errorDetailsObject.details.message)"
-            } else {
+            }
+            else {
                 $httpErrorObj.FriendlyMessage = $httpErrorObj.ErrorDetails
             }
 
-        } catch {
+        }
+        catch {
             $httpErrorObj.FriendlyMessage = $httpErrorObj.ErrorDetails
         }
         Write-Output $httpErrorObj
@@ -103,6 +108,11 @@ function Get-MSEntraAccessToken {
         $signature = $rsa.SignData([Text.Encoding]::UTF8.GetBytes($signatureInput), 'SHA256')
         $base64Signature = [System.Convert]::ToBase64String($signature).Replace('+', '-').Replace('/', '_').Replace('=', '')
 
+        # Ensure the certificate has a private key
+        if (-not $Certificate.HasPrivateKey -or -not $Certificate.PrivateKey) {
+            throw "The certificate does not have a private key."
+        }
+
         # Create the JWT token
         $jwtToken = "$($base64Header).$($base64Payload).$($base64Signature)"
 
@@ -125,7 +135,8 @@ function Get-MSEntraAccessToken {
 
         $createEntraAccessTokenResponse = Invoke-RestMethod @createEntraAccessTokenSplatParams
         Write-Output $createEntraAccessTokenResponse.access_token
-    } catch {
+    }
+    catch {
         $PSCmdlet.ThrowTerminatingError($_)
     }
 }
@@ -137,7 +148,8 @@ function Get-MSEntraCertificate {
         $rawCertificate = [system.convert]::FromBase64String($actionContext.Configuration.AppCertificateBase64String)
         $certificate = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new($rawCertificate, $actionContext.Configuration.AppCertificatePassword, [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable)
         Write-Output $certificate
-    } catch {
+    }
+    catch {
         $PSCmdlet.ThrowTerminatingError($_)
     }
 }
@@ -154,11 +166,13 @@ function Set-MailboxWithRetry {
             try {
                 $null = Set-Mailbox @UpdateExoProperties -Verbose:$false -ErrorAction Stop -WarningAction SilentlyContinue
                 $errorOccurred = $false
-            } catch {
+            }
+            catch {
                 if ($_.Exception.Message -like "*performed because object '*' couldn't be found on*") {
                     $errorOccurred = $true
                     Start-Sleep 2
-                } else {
+                }
+                else {
                     throw $_
                 }
             }
@@ -167,7 +181,8 @@ function Set-MailboxWithRetry {
         if ($errorOccurred -and $retryCount -ge 5) {
             throw "Set-Mailbox failed after $($retryCount) retries"
         }
-    } catch {
+    }
+    catch {
         $PSCmdlet.ThrowTerminatingError($_)
     }
 }
@@ -266,13 +281,15 @@ try {
                     Headers = @{'Authorization' = "Bearer $($entraToken)" }
                 }
                 $null = Invoke-RestMethod @splatGetEntraManager
-            } catch {
+            }
+            catch {
                 if ($_.Exception.StatusCode -eq 404) {
                     throw "MS-Entra-Exo Manager account with accountReference: [$($actionContext.References.ManagerAccount)] could not be found, possibly indicating that it could be deleted"
                 }
                 throw $_
             }
-        } else {
+        }
+        else {
             $outputContext.AuditLogs.Add([PSCustomObject]@{
                     Message = 'Set Manager on create is enabled, but no ManagerAccount is found in the References'
                     IsError = $false
@@ -289,12 +306,14 @@ try {
             $correlatedAccountEntra = $correlatedAccountEntra | Select-Object -First 1
             $outputContext.AccountReference = $correlatedAccountExo.ExternalDirectoryObjectId
 
-        } elseif ($correlatedAccountExo.Count -lt 1 -or $correlatedAccountEntraFallBack.Count -eq 1) {
+        }
+        elseif ($correlatedAccountExo.Count -lt 1 -or $correlatedAccountEntraFallBack.Count -eq 1) {
             # If Entra and Exo account not found = [CreateAccountExo],[UpdateAccountEntraCorrelationValueAfterCreateMailbox],[UpdateAccountEntra],[UpdateAccountExo]
             # If UpdateAccountEntraCorrelationValueAfterCreateMailbox Fails the retry will skip creating the mailbox, and continue with create process
             if (-not ($correlatedAccountEntraFallBack.Count -eq 1)) {
                 $actionList.Add('CreateAccountExo')
-            } else {
+            }
+            else {
                 $createdAccountExo = $correlatedAccountEntraFallBack | Select-Object -First 1
                 $outputContext.AccountReference = $createdAccountExo.id
             }
@@ -304,9 +323,9 @@ try {
                 # When only the HiddenFromAddressListsEnabled property is present and its value is false, do not add the action to avoid an unnecessary update.
                 # This extra check is required because it's common to only update the HiddenFromAddressListsEnabled property, and false is the default value.
                 if ( -not (
-                    (($actionContext.Data.exchangeOnline.PsObject.Properties | Measure-Object).Count -eq 1) -and
-                    ('HiddenFromAddressListsEnabled' -in $actionContext.Data.exchangeOnline.PsObject.Properties.Name ) -and
-                    ($actionContext.Data.exchangeOnline.HiddenFromAddressListsEnabled -eq $false)
+                        (($actionContext.Data.exchangeOnline.PsObject.Properties | Measure-Object).Count -eq 1) -and
+                        ('HiddenFromAddressListsEnabled' -in $actionContext.Data.exchangeOnline.PsObject.Properties.Name ) -and
+                        ($actionContext.Data.exchangeOnline.HiddenFromAddressListsEnabled -eq $false)
                     )) {
                     # Only needed, when ActionContext.Data.ExchangeOnline contains properties
                     $actionList.Add('UpdateAccountExo')
@@ -314,18 +333,21 @@ try {
             }
         }
 
-    } elseif (-not ($actionContext.Configuration.ExchangeOnlineIntegration)) {
+    }
+    elseif (-not ($actionContext.Configuration.ExchangeOnlineIntegration)) {
         # If Entra account found = CorrelateAccount
         if ($correlatedAccountEntra.Count -eq 1) {
             $actionList.Add('CorrelateAccount')
             $correlatedAccountEntra = $correlatedAccountEntra | Select-Object -First 1
             $outputContext.AccountReference = $correlatedAccountEntra.Id
 
-        } elseif ($correlatedAccountEntra.Count -lt 1) {
+        }
+        elseif ($correlatedAccountEntra.Count -lt 1) {
             # If Entra account not found = [CreateAccountEntra]
             $actionList.Add('CreateAccountEntra')
         }
-    } else {
+    }
+    else {
         throw "Unknown action context ExchangeOnlineIntegration [$($actionContext.Configuration.ExchangeOnlineIntegration)]. Please check the configuration"
     }
 
@@ -356,7 +378,8 @@ try {
                     if ($actionContext.Data.PSObject.Properties.Name -contains 'passwordProfile' -and $actionContext.Data.passwordProfile.PSObject.Properties.Name -contains 'password' ) {
                         $outputContext.Data | Add-Member @{passwordProfile = @{password = $actionContext.Data.passwordProfile.password } } -Force
                     }
-                } else {
+                }
+                else {
                     Write-Information '[DryRun] Create and correlate MS-Entra-Exo account, will be executed during enforcement'
                 }
                 $outputContext.AuditLogs.Add([PSCustomObject]@{
@@ -510,7 +533,8 @@ try {
     if ( -not ($outputContext.AuditLogs.IsError -contains $true)) {
         $outputContext.Success = $true
     }
-} catch {
+}
+catch {
     $outputContext.success = $false
     $ex = $PSItem
     if ($($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or
@@ -518,7 +542,8 @@ try {
         $errorObj = Resolve-MS-Entra-ExoError -ErrorObject $ex
         $auditMessage = "Error $($actionMessage). Error: $($errorObj.FriendlyMessage)"
         Write-Warning "Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
-    } else {
+    }
+    else {
         $auditMessage = "Error $($actionMessage). Error: $($ex.Exception.Message)"
         Write-Warning "Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
     }
@@ -526,7 +551,8 @@ try {
             Message = $auditMessage
             IsError = $true
         })
-} finally {
+}
+finally {
     # Filling the None output context with values from the Entra and Exo accounts.
     if (-not [string]::IsNullOrEmpty($correlatedAccountEntra)) {
         foreach ($property in $outputContext.Data.PSObject.Properties) {

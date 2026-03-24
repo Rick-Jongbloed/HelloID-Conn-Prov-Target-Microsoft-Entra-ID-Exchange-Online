@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com), and this project adheres to [Semantic Versioning](https://semver.org).
 
+## [2.2.0] - 16-02-2026
+### Added
+- Feature: Added guest invite capability to invite external users as guest accounts in Microsoft Entra ID.
+- Added separate `guestInvite` folder containing:
+  - `configuration.json`: Configuration template for guest invite operations.
+  - `create.ps1`: PowerShell script to create and invite guest accounts.
+  - `fieldMapping.json`: Field mapping for guest account attributes including invitation details and guest-specific properties.
+- Added documentation for "Inviting Guest Accounts" section in README with detailed setup and usage instructions.
+- Add a check to throw the script when `The certificate does not have a private key`
+
 ## [2.1.2] - 03-02-2026
 - Fix: when no account was found, the script used a throw. This was changed so the script flow works as intended.
 

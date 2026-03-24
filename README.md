@@ -36,6 +36,7 @@
       - [4. Manager Lookup (if configured)](#4-manager-lookup-if-configured)
       - [5. Determine Actions](#5-determine-actions)
       - [6. Execute Actions](#6-execute-actions)
+    - [Inviting Guest Accounts](#inviting-guest-accounts)
   - [Development resources](#development-resources)
     - [GraphAPI documentation](#graphapi-documentation)
     - [ExO documentation](#exo-documentation)
@@ -251,6 +252,14 @@ Actions are executed in order:
 - `UpdateAccountExo`: Updates mailbox properties in Exchange Online, with special handling to skip no-op updates.
 - `CorrelateAccount`: Correlates both the MS Entra and Exchange Online account(s).
 - `SetManager`: Placeholder for setting manager relationship, not implemented.
+
+### Inviting Guest Accounts
+
+- "Invite as Guest" is supported by using a separate target connector.
+- Use the create-script and the field mapping from the `guestInvite` folder. The original config and other event scripts can be used from the original connector.
+- Manager can be set of an invited guest but is not based on a manager reference. The manager is searched by the corresponding `employeeId`, cause mostly the manager reference is not available as a `GuestInvited` account.
+- User credentials and e-mailaddress are based on an external e-mailaddress of the employee
+- Additional application permissions are required: `User.Invite.All`: Invite guest users to the organization.
 
 ## Development resources
 

@@ -106,6 +106,11 @@ function Get-MSEntraAccessToken {
         $signature = $rsa.SignData([Text.Encoding]::UTF8.GetBytes($signatureInput), 'SHA256')
         $base64Signature = [System.Convert]::ToBase64String($signature).Replace('+', '-').Replace('/', '_').Replace('=', '')
 
+        # Ensure the certificate has a private key
+        if (-not $Certificate.HasPrivateKey -or -not $Certificate.PrivateKey) {
+            throw "The certificate does not have a private key."
+        }
+
         # Create the JWT token
         $jwtToken = "$($base64Header).$($base64Payload).$($base64Signature)"
 
@@ -176,10 +181,12 @@ try {
             Headers = @{'Authorization' = "Bearer $($entraToken)" }
         }
         $correlatedAccountEntra = Invoke-RestMethod @splatGetEntraUser -Verbose:$false
-    } catch {
+    }
+    catch {
         if ($_.Exception.Response.StatusCode -eq 404) {
             throw "Entra Account [$($actionContext.References.Account)] could not be found, possibly indicating that it could be deleted"
-        } else {
+        }
+        else {
             throw $_
         }
     }
@@ -187,26 +194,28 @@ try {
     # Microsoft docs: https://learn.microsoft.com/nl-nl/graph/api/emailauthenticationmethod-get?view=graph-rest-1.0&tabs=http
     $actionMessage = "querying email authentication methods for account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)"
     $splatGetCurrentEmailAuthenticationMethods = @{
-        Uri         = "https://graph.microsoft.com/v1.0/users/$($actionContext.References.Account)/authentication/emailMethods"
-        Headers     = $headers
-        Method      = 'GET'
-        Verbose     = $false
+        Uri     = "https://graph.microsoft.com/v1.0/users/$($actionContext.References.Account)/authentication/emailMethods"
+        Headers = $headers
+        Method  = 'GET'
+        Verbose = $false
     }
     $currentEmailAuthenticationMethods = (Invoke-RestMethod @splatGetCurrentEmailAuthenticationMethods).Value
     $currentEmailAuthenticationMethod = ($currentEmailAuthenticationMethods | Where-Object { $_.id -eq "$($actionContext.References.Permission.Reference)" }).emailAddress
 
     if ($null -ne $correlatedAccountEntra) {
         if (($currentEmailAuthenticationMethod | Measure-Object).count -eq 1) {
-            if ($removeWhenRevokingEntitlement){
+            if ($removeWhenRevokingEntitlement) {
                 $action = 'SkipDelete'
-            } else {
+            }
+            else {
                 $action = 'RevokePermission'
             }
         }
         elseif (($currentEmailAuthenticationMethod | Measure-Object).count -eq 0) {
             $action = 'NoExistingData-SkipDelete'
         }
-    } else {
+    }
+    else {
         $action = 'NotFound'
     }
 
@@ -225,7 +234,8 @@ try {
             if (-not($actionContext.DryRun -eq $true)) {
                 Write-Information "Revoking MS-Entra-Exo permission: [$($actionContext.PermissionDisplayName)] - [$($actionContext.References.Permission.Reference)]"
                 $null = Invoke-RestMethod @deleteEmailAuthenticationMethodSplatParams
-            } else {
+            }
+            else {
                 Write-Information "[DryRun] Revoke MS-Entra-Exo permission: [$($actionContext.PermissionDisplayName)] - [$($actionContext.References.Permission.Reference)], will be executed during enforcement"
             }
 
@@ -265,13 +275,14 @@ try {
             Write-Information "MS-Entra account: [$($actionContext.References.Account)] could not be found, possibly indicating that it already has been deleted"
             $outputContext.Success = $true
             $outputContext.AuditLogs.Add([PSCustomObject]@{
-                Message = "MS-Entra-Exo account: [$($actionContext.References.Account)] could not be found, possibly indicating that it already has been deleted"
-                IsError = $false
-            })
+                    Message = "MS-Entra-Exo account: [$($actionContext.References.Account)] could not be found, possibly indicating that it already has been deleted"
+                    IsError = $false
+                })
             break
         }
     }
-} catch {
+}
+catch {
     $outputContext.success = $false
     $ex = $PSItem
     if ($($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or
@@ -279,12 +290,13 @@ try {
         $errorObj = Resolve-MS-Entra-ExoError -ErrorObject $ex
         $auditMessage = "Error $($actionMessage). Error: $($errorObj.FriendlyMessage)"
         Write-Warning "Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
-    } else {
+    }
+    else {
         $auditMessage = "Error $($actionMessage). Error: $($ex.Exception.Message)"
         Write-Warning "Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
     }
     $outputContext.AuditLogs.Add([PSCustomObject]@{
-        Message = $auditMessage
-        IsError = $true
-    })
+            Message = $auditMessage
+            IsError = $true
+        })
 }
