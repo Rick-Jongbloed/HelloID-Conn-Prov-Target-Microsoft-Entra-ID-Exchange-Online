@@ -56,15 +56,15 @@ The _HelloID-Conn-Prov-Target-Microsoft-Entra-ID-Exchange-Online_ connector supp
 
 The following features are available:
 
-| Feature                                   | Supported | Actions / Type                                                      | Remarks                                              |
-| ----------------------------------------- | --------- | ------------------------------------------------------------------- | ---------------------------------------------------- |
-| **Account Lifecycle**                     | ✅         | Create, Update, Enable, Disable, Delete                             |                                                      |
-| **Permissions**                           | ✅         | Groups (static and dynamic), Phone and Email authentication methods |                                                      |
-| **Resources**                             | ✅         | Groups                                                              | Only available for groups                            |
-| **Uniqueness**                            | ✅         | -                                                                   |                                                      |
-| **Entitlement Import: Accounts**          | ✅         | -                                                                   |                                                      |
-| **Entitlement Import: Permissions**       | ✅         | Groups                                                              | No import for Phone and Email authentication methods |
-| **Governance Reconciliation Resolutions** | ✅         | Reconciliation  [Governance Remarks](#governance-remarks)           |                                                      |
+| Feature                                   | Supported | Actions / Type                                                              | Remarks                                              |
+| ----------------------------------------- | --------- | --------------------------------------------------------------------------- | ---------------------------------------------------- |
+| **Account Lifecycle**                     | ✅         | Create, Update, Enable, Disable, Delete                                     |                                                      |
+| **Permissions**                           | ✅         | Groups (static and sub permissions), Phone and Email authentication methods |                                                      |
+| **Resources**                             | ✅         | Groups, Teams                                                               | Only available for groups and teams                  |
+| **Uniqueness**                            | ✅         | -                                                                           |                                                      |
+| **Entitlement Import: Accounts**          | ✅         | -                                                                           |                                                      |
+| **Entitlement Import: Permissions**       | ✅         | Groups                                                                      | No import for Phone and Email authentication methods |
+| **Governance Reconciliation Resolutions** | ✅         | Reconciliation  [Governance Remarks](#governance-remarks)                   |                                                      |
 
 ## Getting started
 
@@ -89,6 +89,9 @@ Once you have completed the Microsoft setup and followed their best practices, c
   - `User.EnableDisableAccount.All`
   - `User-PasswordProfile.ReadWrite.All`
   - `User-Phone.ReadWrite.All`
+  - `Team.Create`
+  - `Team.ReadBasic.All`
+  - `TeamSettings.ReadWrite.All`
 - **Exchange Online permissions:**
   - `Exchange.ManageAsApp` (Office 365 Exchange Online)
 - **Entra ID Role assignment:**
@@ -96,6 +99,9 @@ Once you have completed the Microsoft setup and followed their best practices, c
 - **Certificate:**
   - Upload the public key file (.cer) in Entra ID
   - Provide the certificate as a Base64 string in HelloID. For instructions on creating the certificate and obtaining the base64 string, refer to our forum post: [Setting up a certificate for Microsoft Graph API in HelloID connectors](https://forum.helloid.com/forum/helloid-provisioning/5338-instruction-setting-up-a-certificate-for-microsoft-graph-api-in-helloid-connectors#post5338)
+
+> [!NOTE]
+> **App registration permissions** depend on the functionality you use. For example, if you do not create teams using a resource script, read/write permissions are not required.
 
 ### Connection settings
 

@@ -1,6 +1,6 @@
 #####################################################
-# HelloID-Conn-Prov-Target-Microsoft-Entra-ID-Resources-Groups
-# Creates groups dynamically based on HR data
+# HelloID-Conn-Prov-Target-Microsoft-Entra-ID-Resources-Teams
+# Creates teams dynamically based on HR data
 # PowerShell V2
 #####################################################
 
@@ -12,6 +12,9 @@ $resourceData = $resourceContext.SourceData | Select-Object -Unique ExternalId, 
 # Define correlation
 $correlationField = "displayName"
 $correlationValue = "" # Defined later in script
+
+# Hardcoded Object ID of EntraID User to set as owner of team
+$ownerAccountId = "7dcbb7e7-ae5f-499e-b9d4-ad80c6eb097c"
 
 # Enable TLS1.2
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
@@ -210,55 +213,55 @@ try {
     # Needed to filter on specific attributes (https://docs.microsoft.com/en-us/graph/aad-advanced-queries)
     $headers.Add('ConsistencyLevel', 'eventual')
 
-    # Microsoft docs: https://learn.microsoft.com/en-us/graph/api/group-list?view=graph-rest-1.0&tabs=http
-    $actionMessage = "querying Microsoft Entra ID Groups"
+    # Microsoft docs: https://learn.microsoft.com/en-us/graph/api/teams-list?view=graph-rest-1.0&tabs=http
+    $actionMessage = "querying Microsoft Entra ID Teams"
 
-    $microsoftEntraIDGroups = [System.Collections.ArrayList]@()
+    $microsoftEntraIDTeams = [System.Collections.ArrayList]@()
     do {
         $baseUri = "https://graph.microsoft.com/"
-        $getMicrosoftEntraIDGroupsSplatParams = @{
-            Uri         = "$($baseUri)/v1.0/groups?`$top=999&`$count=true"
+        $getMicrosoftEntraIDTeamsSplatParams = @{
+            Uri         = "$($baseUri)/v1.0/teams?`$top=999&`$count=true"
             Headers     = $headers
             Method      = "GET"
             Verbose     = $false
             ErrorAction = "Stop"
         }
-        if (-not[string]::IsNullOrEmpty($getMicrosoftEntraIDGroupsResult.'@odata.nextLink')) {
-            $getMicrosoftEntraIDGroupsSplatParams["Uri"] = $getMicrosoftEntraIDGroupsResult.'@odata.nextLink'
+        if (-not[string]::IsNullOrEmpty($getMicrosoftEntraIDTeamsResult.'@odata.nextLink')) {
+            $getMicrosoftEntraIDTeamsSplatParams["Uri"] = $getMicrosoftEntraIDTeamsResult.'@odata.nextLink'
         }
 
-        $getMicrosoftEntraIDGroupsResult = $null
-        $getMicrosoftEntraIDGroupsResult = Invoke-RestMethod @getMicrosoftEntraIDGroupsSplatParams
+        $getMicrosoftEntraIDTeamsResult = $null
+        $getMicrosoftEntraIDTeamsResult = Invoke-RestMethod @getMicrosoftEntraIDTeamsSplatParams
     
-        if ($getMicrosoftEntraIDGroupsResult.Value -is [array]) {
-            [void]$microsoftEntraIDGroups.AddRange($getMicrosoftEntraIDGroupsResult.Value)
+        if ($getMicrosoftEntraIDTeamsResult.Value -is [array]) {
+            [void]$microsoftEntraIDTeams.AddRange($getMicrosoftEntraIDTeamsResult.Value)
         }
         else {
-            [void]$microsoftEntraIDGroups.Add($getMicrosoftEntraIDGroupsResult.Value)
+            [void]$microsoftEntraIDTeams.Add($getMicrosoftEntraIDTeamsResult.Value)
         }
-    } while (-not[string]::IsNullOrEmpty($getMicrosoftEntraIDGroupsResult.'@odata.nextLink'))
+    } while (-not[string]::IsNullOrEmpty($getMicrosoftEntraIDTeamsResult.'@odata.nextLink'))
 
     # Group on correlation property to check if group exists (as correlation property has to be unique for a group)
-    $microsoftEntraIDGroupsGrouped = $microsoftEntraIDGroups | Group-Object $correlationField -AsHashTable -AsString
+    $microsoftEntraIDTeamsGrouped = $microsoftEntraIDTeams | Group-Object $correlationField -AsHashTable -AsString
 
-    Write-Information "Queried Microsoft Entra ID Groups. Result count: $(($microsoftEntraIDGroups | Measure-Object).Count)"
+    Write-Information "Queried Microsoft Entra ID Teams. Result count: $(($microsoftEntraIDTeams | Measure-Object).Count)"
 
     foreach ($resource in $resourceData) {
-        $actionMessage = "querying group for resource: $($resource | ConvertTo-Json)"
+        $actionMessage = "querying team for resource: $($resource | ConvertTo-Json)"
  
         # Example: department_<departmentname>
-        $groupName = "department_" + $resource.DisplayName
+        $teamName = "department_" + $resource.DisplayName
 
         # Example: title_<titlename>
-        # $groupName = "title_" + $resource.Name
+        # $teamName = "title_" + $resource.Name
 
-        # Sanitize group name, e.g. replace " - " with "_" or other sanitization actions 
-        $groupName = Get-SanitizedGroupName -Name $groupName
+        # Sanitize team name, e.g. replace " - " with "_" or other sanitization actions 
+        $teamName = Get-SanitizedGroupName -Name $teamName
 
-        $correlationValue = $groupName
+        $correlationValue = $teamName
 
         $correlatedResource = $null
-        $correlatedResource = $microsoftEntraIDGroupsGrouped["$($correlationValue)"]
+        $correlatedResource = $microsoftEntraIDTeamsGrouped["$($correlationValue)"]
         
         if (($correlatedResource | Measure-Object).count -eq 0) {
             $actionResource = "CreateResource"
@@ -270,68 +273,59 @@ try {
         #region Process
         switch ($actionResource) {
             "CreateResource" {
-                # Microsoft docs: https://learn.microsoft.com/en-us/graph/api/group-post-groups?view=graph-rest-1.0&tabs=http
-                $actionMessage = "creating group for resource: $($resource | ConvertTo-Json)"
+                # Microsoft docs: https://learn.microsoft.com/en-us/graph/api/team-post?view=graph-rest-1.0&tabs=http
+                $actionMessage = "creating team for resource: $($resource | ConvertTo-Json)"
 
-                # Example: Microsoft 365 group
-                $createGroupBody = @{
-                    displayName     = $groupName
-                    description     = $groupDescription
-                    mailNickname    = $groupName.Replace(" ", "")
-                    # visibility      = $groupVisibility # Optional parameter with fixed values. Forexample 'Public' or 'Private'
+                $createTeamBody = @{
+                    "template@odata.bind" = "https://graph.microsoft.com/v1.0/teamsTemplates('standard')"
+                    displayName           = $teamName
+                    description           = "$($resource.ExternalId)"
+                    visibility            = "Private"
 
-                    groupTypes      = @("Unified") # Needs to be set to with 'Unified' to create Microsoft 365 group
-                    mailEnabled     = $true # Needs to be enabled to create Microsoft 365 group
-                    securityEnabled = $false # Needs to be disabled to create Microsoft 365 group
-
-                    # allowExternalSenders = $allowExternalSenders - Not supported with Application permissions
-                    # autoSubscribeNewMembers = $autoSubscribeNewMembers - Not supported with Application permissions
+                    members               = [System.Collections.ArrayList]@()
                 }
 
-                # Example: Microsoft Security group
-                # $createGroupBody = @{
-                #     displayName     = $groupName
-                #     description     = $groupDescription
-                #     mailNickname    = $groupName.Replace(" ", "")
-                #     # visibility      = $groupVisibility # Optional parameter with fixed values. Forexample 'Public' or 'Private'  
-
-                #     #groupTypes = @("") # Needs to be empty to create Security group
-                #     mailEnabled     = $false # Needs to be disabled to create Security group
-                #     securityEnabled = $true # Needs to be enabled to create Security group
-
-                #     # allowExternalSenders = $allowExternalSenders - Not supported with Application permissions
-                #     # autoSubscribeNewMembers = $autoSubscribeNewMembers - Not supported with Application permissions    
-                # }
+                if (-not[string]::IsNullOrEmpty($ownerAccountId)) {
+                    [void]$createTeamBody.members.add(
+                        @{
+                            "@odata.type"     = "#microsoft.graph.aadUserConversationMember"
+                            roles             = @(
+                                "owner"
+                            )
+                            "user@odata.bind" = "https://graph.microsoft.com/v1.0/users('$ownerAccountId')"
+                        }
+                    )
+                }
 
                 $baseUri = "https://graph.microsoft.com/"
                 $createGroupSplatParams = @{
-                    Uri         = "$($baseUri)/v1.0/groups"
+                    Uri         = "$($baseUri)/v1.0/teams"
                     Headers     = $headers
                     Method      = "POST"
-                    Body        = ($createGroupBody | ConvertTo-Json -Depth 10)
+                    Body        = ($createTeamBody | ConvertTo-Json -Depth 10)
                     Verbose     = $false
                     ErrorAction = "Stop"
                 }
 
                 if (-Not($actionContext.DryRun -eq $true)) {
-                    $createdGroup = Invoke-RestMethod @createGroupSplatParams
+                    $createdTeam = Invoke-RestMethod @createGroupSplatParams
 
                     $outputContext.AuditLogs.Add([PSCustomObject]@{
                             Action  = "CreateResource"
-                            Message = "Created group with name [$($groupName)] with id [$($createdGroup.id)]."
+                            Message = "Created team with name [$($teamName)]."
                             IsError = $false
                         })
                 }
                 else {
-                    Write-Information "[DryRun] Would create group with name [$($groupName)] for resource: $($resource | ConvertTo-Json)."
+                    Write-Information "[DryRun] Would create team with name [$($teamName)] for resource: $($resource | ConvertTo-Json)."
                 }
                 break
             }
 
             "CorrelateResource" {
-                $actionMessage = "correlating to group for resource: $($resource | ConvertTo-Json)"
+                $actionMessage = "correlating to team"
 
-                Write-Information "Correlated to group with id [$($correlatedResource.id)] on [$($correlationField)] = [$($correlationValue)]."
+                Write-Information "Correlated to team with id [$($correlatedResource.id)] on [$($correlationField)] = [$($correlationValue)]."
                 break
             }
         }
