@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file. The format 
 ## [2.3.0] - 13-04-2026
 ### Added
 - Resource creation for teams.
+- PerUserMfaState permissions.
 
 ### Fixed
 - Reconciliation action to disable or delete account was not working.

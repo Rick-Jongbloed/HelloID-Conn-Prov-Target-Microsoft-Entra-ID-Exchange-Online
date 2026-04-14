@@ -56,15 +56,15 @@ The _HelloID-Conn-Prov-Target-Microsoft-Entra-ID-Exchange-Online_ connector supp
 
 The following features are available:
 
-| Feature                                   | Supported | Actions / Type                                                              | Remarks                                              |
-| ----------------------------------------- | --------- | --------------------------------------------------------------------------- | ---------------------------------------------------- |
-| **Account Lifecycle**                     | ✅         | Create, Update, Enable, Disable, Delete                                     |                                                      |
-| **Permissions**                           | ✅         | Groups (static and sub permissions), Phone and Email authentication methods |                                                      |
-| **Resources**                             | ✅         | Groups, Teams                                                               | Only available for groups and teams                  |
-| **Uniqueness**                            | ✅         | -                                                                           |                                                      |
-| **Entitlement Import: Accounts**          | ✅         | -                                                                           |                                                      |
-| **Entitlement Import: Permissions**       | ✅         | Groups                                                                      | No import for Phone and Email authentication methods |
-| **Governance Reconciliation Resolutions** | ✅         | Reconciliation  [Governance Remarks](#governance-remarks)                   |                                                      |
+| Feature                                   | Supported | Actions / Type                                                                               | Remarks                             |
+| ----------------------------------------- | --------- | -------------------------------------------------------------------------------------------- | ----------------------------------- |
+| **Account Lifecycle**                     | ✅         | Create, Update, Enable, Disable, Delete                                                      |                                     |
+| **Permissions**                           | ✅         | Groups (static and sub permissions), Phone, Email authentication and perUserMfaState methods |                                     |
+| **Resources**                             | ✅         | Groups, Teams                                                                                | Only available for groups and teams |
+| **Uniqueness**                            | ✅         | -                                                                                            |                                     |
+| **Entitlement Import: Accounts**          | ✅         | -                                                                                            |                                     |
+| **Entitlement Import: Permissions**       | ✅         | Groups                                                                                       | Only available for groups           |
+| **Governance Reconciliation Resolutions** | ✅         | Reconciliation  [Governance Remarks](#governance-remarks)                                    |                                     |
 
 ## Getting started
 
