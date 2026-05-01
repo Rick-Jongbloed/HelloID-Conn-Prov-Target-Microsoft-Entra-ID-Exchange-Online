@@ -169,6 +169,9 @@ try {
         if ([string]::IsNullOrEmpty($correlationValue)) {
             throw "The correlation value for [$correlationField] is empty. This is likely a mapping issue."
         }
+        if ($correlationField.StartsWith("onPremisesExtensionAttributes.extensionAttribute")) {
+            $correlationField = $correlationField.replace('.', '/')
+        }
     }
     else {
         throw "Correlation is disabled."

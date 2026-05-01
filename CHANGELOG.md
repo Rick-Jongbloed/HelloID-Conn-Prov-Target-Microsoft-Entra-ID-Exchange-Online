@@ -9,6 +9,7 @@ All notable changes to this project will be documented in this file. The format 
 
 ### Fixed
 - Reconciliation action to disable or delete account was not working.
+- Correlation now works for `onPremisesExtensionAttributes.extensionAttribute`
 
 ## [2.2.0] - 16-02-2026
 ### Added
