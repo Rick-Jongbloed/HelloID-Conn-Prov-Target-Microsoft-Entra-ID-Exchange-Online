@@ -14,9 +14,11 @@
   - [Introduction](#introduction)
   - [Supported  features](#supported--features)
   - [Getting started](#getting-started)
+    - [HelloID Icon URL](#helloid-icon-url)
     - [Requirements](#requirements)
       - [App Registration \& Certificate Setup](#app-registration--certificate-setup)
       - [HelloID-specific configuration](#helloid-specific-configuration)
+      - [Convert .pfx to base64 string](#convert-pfx-to-base64-string)
     - [Connection settings](#connection-settings)
     - [Correlation configuration](#correlation-configuration)
     - [Field mapping](#field-mapping)
@@ -67,6 +69,12 @@ The following features are available:
 | **Governance Reconciliation Resolutions** | ✅         | Reconciliation  [Governance Remarks](#governance-remarks)                                    |                                     |
 
 ## Getting started
+
+### HelloID Icon URL
+URL of the icon used for the HelloID Provisioning target system.
+```
+https://raw.githubusercontent.com/Tools4everBV/HelloID-Conn-Prov-Target-Microsoft-Entra-ID-Exchange-Online/refs/heads/main/Icon.png
+```
 
 ### Requirements
 
