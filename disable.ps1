@@ -370,20 +370,23 @@ catch {
         })
 }
 finally {
-    # Convert string booleans to actual booleans
-    $null = Convert-StringBooleanToBoolean -InputObject $outputContext.Data
+    # Returning data is only needed when origin is enforcement.
+    if ($actionContext.Origin -eq 'enforcement') {
+        # Convert string booleans to actual booleans
+        $null = Convert-StringBooleanToBoolean -InputObject $outputContext.Data
 
-    # Filling the None output context with values from the Entra and Exo accounts.
-    foreach ($property in $outputContext.Data.PSObject.Properties) {
-        if ($property.name -notin $actionContext.Data.PSObject.Properties.Name ) {
-            $outputContext.Data.$($property.name) = $correlatedAccountEntra.$($property.name)
+        # Filling the None output context with values from the Entra and Exo accounts.
+        foreach ($property in $outputContext.Data.PSObject.Properties) {
+            if ($property.name -notin $actionContext.Data.PSObject.Properties.Name ) {
+                $outputContext.Data.$($property.name) = $correlatedAccountEntra.$($property.name)
+            }
         }
-    }
 
-    if ($actionContext.Configuration.ExchangeOnlineIntegration -and $actionContext.Data.PSObject.Properties.Name -contains 'exchangeOnline') {
-        foreach ($property in $outputContext.Data.ExchangeOnline.PSObject.Properties) {
-            if ($property.name -notin $actionContext.Data.ExchangeOnline.PSObject.Properties.Name ) {
-                $outputContext.Data.ExchangeOnline.$($property.name) = $correlatedAccountExo.$($property.name)
+        if ($actionContext.Configuration.ExchangeOnlineIntegration -and $actionContext.Data.PSObject.Properties.Name -contains 'exchangeOnline') {
+            foreach ($property in $outputContext.Data.ExchangeOnline.PSObject.Properties) {
+                if ($property.name -notin $actionContext.Data.ExchangeOnline.PSObject.Properties.Name ) {
+                    $outputContext.Data.ExchangeOnline.$($property.name) = $correlatedAccountExo.$($property.name)
+                }
             }
         }
     }

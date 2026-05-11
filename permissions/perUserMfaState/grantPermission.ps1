@@ -1,7 +1,8 @@
-#############################################################
-# HelloID-Conn-Prov-Target-MS-Entra-Exo-GrantPermission-Group
+#################################################
+# HelloID-Conn-Prov-Target-Microsoft-Entra-ID-Permissions-perUserMfaState-Grant
+# enable per user mfa state (uses beta endpoint)
 # PowerShell V2
-#############################################################
+#################################################
 
 # Enable TLS1.2
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
@@ -198,37 +199,51 @@ try {
     # Process
     switch ($action) {
         'GrantPermission' {
-            if (-not($actionContext.DryRun -eq $true)) {
-                $actionMessage = "Granting MS-Entra-Exo permission group: [$($actionContext.PermissionDisplayName)] - [$($actionContext.References.Permission.Id)]"
+            $state = 'enabled'
 
-                # Microsoft docs: https://learn.microsoft.com/en-us/graph/api/group-post-members?view=graph-rest-1.0&tabs=http
-                $splatGrantPermission = @{
-                    Uri     = "https://graph.microsoft.com/v1.0/groups/$($actionContext.References.Permission.Id)/members/`$ref"
-                    Headers = $headers
-                    Method  = 'POST'
-                    Verbose = $false
-                    Body    = @{
-                        "@odata.id" = "https://graph.microsoft.com/v1.0/users/$($actionContext.References.Account)"
-                    } | ConvertTo-Json -Depth 10
-                }
-                try {
+            $actionMessage = "querying perUserMfaState for account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)"
+            $splatGetCurrentPerUserMfaState = @{
+                Uri         = "https://graph.microsoft.com/beta/users/$($actionContext.References.Account)/authentication/requirements"
+                Headers     = $headers
+                Method      = 'GET'
+                Verbose     = $false
+                ErrorAction = 'Stop'
+            }
+            $currentPerUserMfaStateResponse = Invoke-RestMethod @splatGetCurrentPerUserMfaState -Verbose:$false
+            $currentPerUserMfaState = $currentPerUserMfaStateResponse.perUserMfaState
+
+            if ($currentPerUserMfaState -eq 'disabled') {
+                if (-not($actionContext.DryRun -eq $true)) {
+                    $actionMessage = "setting perUserMfaState to [$($state)] for account"
+                    $splatGrantPermission = @{
+                        Uri         = "https://graph.microsoft.com/beta/users/$($actionContext.References.Account)/authentication/requirements"
+                        Headers     = $headers
+                        Method      = 'PATCH'
+                        Verbose     = $false
+                        Body        = @{
+                            perUserMfaState = $state
+                        } | ConvertTo-Json -Depth 10
+                        ErrorAction = 'Stop'
+                    }
                     $null = Invoke-RestMethod @splatGrantPermission
                 }
-                catch {
-                    if (($_.ErrorDetails.Message | ConvertFrom-Json).error.message -ne 'One or more added object references already exist for the following modified properties: ''members''.') {
-                        throw $_.ErrorDetails.Message
-                    }
+                else {
+                    Write-Information "[DryRun] Set perUserMfaState to [$($state)] for account [$($actionContext.References.Account)], will be executed during enforcement"
                 }
+
+                $outputContext.Success = $true
+                $outputContext.AuditLogs.Add([PSCustomObject]@{
+                        Message = "Grant perUserMfaState [$($state)] was successful"
+                        IsError = $false
+                    })
             }
             else {
-                Write-Information "[DryRun] Grant MS-Entra-Exo permission group: [$($actionContext.PermissionDisplayName)] - [$($actionContext.References.Permission.Id)], will be executed during enforcement"
+                $outputContext.Success = $true
+                $outputContext.AuditLogs.Add([PSCustomObject]@{
+                        Message = "Skipped setting perUserMfaState to [$($state)] as it is already set to the desired state"
+                        IsError = $false
+                    })
             }
-
-            $outputContext.Success = $true
-            $outputContext.AuditLogs.Add([PSCustomObject]@{
-                    Message = "Grant permission group [$($actionContext.PermissionDisplayName)] was successful"
-                    IsError = $false
-                })
         }
 
         'NotFound' {

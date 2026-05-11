@@ -383,17 +383,20 @@ catch {
         })
 }
 finally {
-    # Filling the None output context with values from the Entra and Exo accounts.
-    foreach ($property in $outputContext.Data.PSObject.Properties) {
-        if ($property.name -notin $actionContext.Data.PSObject.Properties.Name ) {
-            $outputContext.Data.$($property.name) = $correlatedAccountEntra.$($property.name)
+    # Returning data is only needed when origin is enforcement.
+    if ($actionContext.Origin -eq 'enforcement') {
+        # Filling the None output context with values from the Entra and Exo accounts.
+        foreach ($property in $outputContext.Data.PSObject.Properties) {
+            if ($property.name -notin $actionContext.Data.PSObject.Properties.Name ) {
+                $outputContext.Data.$($property.name) = $correlatedAccountEntra.$($property.name)
+            }
         }
-    }
 
-    if ($actionContext.Configuration.ExchangeOnlineIntegration -and ($actionContext.Data.PSObject.Properties.Name -contains 'exchangeOnline' -or $actionContext.Origin -eq 'reconciliation')) {
-        foreach ($property in $outputContext.Data.ExchangeOnline.PSObject.Properties) {
-            if ($property.name -notin $actionContext.Data.ExchangeOnline.PSObject.Properties.Name ) {
-                $outputContext.Data.ExchangeOnline.$($property.name) = $correlatedAccountExo.$($property.name)
+        if ($actionContext.Configuration.ExchangeOnlineIntegration -and ($actionContext.Data.PSObject.Properties.Name -contains 'exchangeOnline' -or $actionContext.Origin -eq 'reconciliation')) {
+            foreach ($property in $outputContext.Data.ExchangeOnline.PSObject.Properties) {
+                if ($property.name -notin $actionContext.Data.ExchangeOnline.PSObject.Properties.Name ) {
+                    $outputContext.Data.ExchangeOnline.$($property.name) = $correlatedAccountExo.$($property.name)
+                }
             }
         }
     }

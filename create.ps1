@@ -219,6 +219,9 @@ try {
     if ([string]::IsNullOrEmpty($($correlationValue))) {
         throw 'Correlation is enabled but [accountFieldValue] is empty. Please make sure it is correctly mapped'
     }
+    if ($correlationField.StartsWith("onPremisesExtensionAttributes.extensionAttribute")) {
+        $correlationField = $correlationField.replace('.', '/')
+    }
 
     # Get Entra account
     $actionMessage = "querying MS-Entra account where [$($correlationField)] [$($correlationValue)]"

@@ -14,9 +14,11 @@
   - [Introduction](#introduction)
   - [Supported  features](#supported--features)
   - [Getting started](#getting-started)
+    - [HelloID Icon URL](#helloid-icon-url)
     - [Requirements](#requirements)
       - [App Registration \& Certificate Setup](#app-registration--certificate-setup)
       - [HelloID-specific configuration](#helloid-specific-configuration)
+      - [Convert .pfx to base64 string](#convert-pfx-to-base64-string)
     - [Connection settings](#connection-settings)
     - [Correlation configuration](#correlation-configuration)
     - [Field mapping](#field-mapping)
@@ -56,17 +58,23 @@ The _HelloID-Conn-Prov-Target-Microsoft-Entra-ID-Exchange-Online_ connector supp
 
 The following features are available:
 
-| Feature                                   | Supported | Actions / Type                                                      | Remarks                                              |
-| ----------------------------------------- | --------- | ------------------------------------------------------------------- | ---------------------------------------------------- |
-| **Account Lifecycle**                     | ✅         | Create, Update, Enable, Disable, Delete                             |                                                      |
-| **Permissions**                           | ✅         | Groups (static and dynamic), Phone and Email authentication methods |                                                      |
-| **Resources**                             | ✅         | Groups                                                              | Only available for groups                            |
-| **Uniqueness**                            | ✅         | -                                                                   |                                                      |
-| **Entitlement Import: Accounts**          | ✅         | -                                                                   |                                                      |
-| **Entitlement Import: Permissions**       | ✅         | Groups                                                              | No import for Phone and Email authentication methods |
-| **Governance Reconciliation Resolutions** | ✅         | Reconciliation  [Governance Remarks](#governance-remarks)           |                                                      |
+| Feature                                   | Supported | Actions / Type                                                                               | Remarks                             |
+| ----------------------------------------- | --------- | -------------------------------------------------------------------------------------------- | ----------------------------------- |
+| **Account Lifecycle**                     | ✅         | Create, Update, Enable, Disable, Delete                                                      |                                     |
+| **Permissions**                           | ✅         | Groups (static and sub permissions), Phone, Email authentication and perUserMfaState methods |                                     |
+| **Resources**                             | ✅         | Groups, Teams                                                                                | Only available for groups and teams |
+| **Uniqueness**                            | ✅         | -                                                                                            |                                     |
+| **Entitlement Import: Accounts**          | ✅         | -                                                                                            |                                     |
+| **Entitlement Import: Permissions**       | ✅         | Groups                                                                                       | Only available for groups           |
+| **Governance Reconciliation Resolutions** | ✅         | Reconciliation  [Governance Remarks](#governance-remarks)                                    |                                     |
 
 ## Getting started
+
+### HelloID Icon URL
+URL of the icon used for the HelloID Provisioning target system.
+```
+https://raw.githubusercontent.com/Tools4everBV/HelloID-Conn-Prov-Target-Microsoft-Entra-ID-Exchange-Online/refs/heads/main/Icon.png
+```
 
 ### Requirements
 
@@ -89,14 +97,31 @@ Once you have completed the Microsoft setup and followed their best practices, c
   - `User.EnableDisableAccount.All`
   - `User-PasswordProfile.ReadWrite.All`
   - `User-Phone.ReadWrite.All`
+  - `Team.Create`
+  - `Team.ReadBasic.All`
+  - `TeamSettings.ReadWrite.All`
 - **Exchange Online permissions:**
   - `Exchange.ManageAsApp` (Office 365 Exchange Online)
 - **Entra ID Role assignment:**
   - Assign the **Exchange Recipient Administrator** role to the App Registration
 - **Certificate:**
   - Upload the public key file (.cer) in Entra ID
-  - Provide the certificate as a Base64 string in HelloID. For instructions on creating the certificate and obtaining the base64 string, refer to our forum post: [Setting up a certificate for Microsoft Graph API in HelloID connectors](https://forum.helloid.com/forum/helloid-provisioning/5338-instruction-setting-up-a-certificate-for-microsoft-graph-api-in-helloid-connectors#post5338)
+  - Provide the certificate as a Base64 string in HelloID.
 
+> [!NOTE]
+> **App registration permissions** depend on the functionality you use. For example, if you do not create teams using a resource script, read/write permissions are not required.
+
+#### Convert .pfx to base64 string
+HelloID requires a base64 string to import the certificate. With the example below, it is possible to create a base64 string
+
+```Powershell
+$filePath = 'C:\Cert'
+$pfxCertName = 'Cert.pfx'
+$pfxPath = "$filePath\$pfxCertName"
+
+$fileContentBytes = [System.IO.File]::ReadAllBytes("$pfxPath")
+[System.Convert]::ToBase64String($fileContentBytes) | Set-Content "$filePath\HelloID_Cert_Base64.txt"
+```
 ### Connection settings
 
 The following settings are required to connect to the API.
@@ -291,9 +316,6 @@ The following cmdlets are used by the connector
 
 > [!TIP]
 > _For more information on how to configure a HelloID PowerShell connector, please refer to our [documentation](https://docs.helloid.com/en/provisioning/target-systems/powershell-v2-target-systems.html) pages_.
-
-> [!TIP]
->  _If you need help, feel free to ask questions on our [forum](https://forum.helloid.com)_.
 
 ## HelloID docs
 
