@@ -1,0 +1,56 @@
+[
+  {
+    "defaultValue": "",
+    "key": "TenantID",
+    "templateOptions": {
+      "description": "",
+      "label": "App Registration Directory (tenant) ID",
+      "placeholder": "00000000-0000-0000-0000-000000000000",
+      "required": true
+    },
+    "type": "input"
+  },
+  {
+    "defaultValue": "",
+    "key": "AppId",
+    "templateOptions": {
+      "description": "",
+      "label": "App Registration Application (client) ID",
+      "placeholder": "00000000-0000-0000-0000-000000000000",
+      "required": true
+    },
+    "type": "input"
+  },
+  {
+    "defaultValue": "",
+    "key": "AppCertificateBase64String",
+    "templateOptions": {
+      "label": "App Registration Certificate Base 64 String",
+      "placeholder": "WFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFg==",
+      "required": true,
+      "type": "password"
+    },
+    "type": "input"
+  },
+  {
+    "defaultValue": "",
+    "key": "AppCertificatePassword",
+    "templateOptions": {
+      "label": "App Registration Certificate Password",
+      "placeholder": "P@ssw0rd!",
+      "required": true,
+      "type": "password"
+    },
+    "type": "input"
+  },
+  {
+    "key": "TemporaryAccesPassLifetime",
+    "type": "input",
+    "defaultValue": "",
+    "templateOptions": {
+      "label": "Temporary Acces Pass Lifetime (m)",
+      "placeholder": "4320",
+      "required": true
+    }
+  }
+]
