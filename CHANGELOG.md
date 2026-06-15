@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com), and this project adheres to [Semantic Versioning](https://semver.org).
 
+## [2.4.0] - 11-05-2026
+### Added
+- Support for managing en creating educational groups
+
 ## [2.3.0] - 13-04-2026
 ### Added
 - Resource creation for teams.

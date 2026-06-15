@@ -1,0 +1,46 @@
+[
+    {
+        "defaultValue": "Klas",
+        "key": "classTeamPrefix",
+        "templateOptions": {
+            "description": "",
+            "label": "Optional prefix for classteams",
+            "placeholder": "Klas",
+            "required": false
+        },
+        "type": "input"
+    },
+    {
+        "defaultValue": "Les",
+        "key": "lessonTeamPrefix",
+        "templateOptions": {
+            "description": "",
+            "label": "Optional prefix for lessonteams",
+            "placeholder": "Les",
+            "required": false
+        },
+        "type": "input"
+    },
+    {
+        "defaultValue": "Vak",
+        "key": "subjectTeamPrefix",
+        "templateOptions": {
+            "description": "",
+            "label": "Optional prefix for subjectteams",
+            "placeholder": "Vak",
+            "required": false
+        },
+        "type": "input"
+    },
+    {
+        "defaultValue": "",
+        "key": "ownerGuid",
+        "templateOptions": {
+            "description": "",
+            "label": "Mandatory GUID of Team owner",
+            "placeholder": "00000000-0000-0000-0000-000000000000",
+            "required": true
+        },
+        "type": "input"
+    }
+]
