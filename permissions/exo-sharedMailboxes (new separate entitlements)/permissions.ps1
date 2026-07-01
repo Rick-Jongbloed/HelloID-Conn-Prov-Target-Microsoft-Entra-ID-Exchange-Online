@@ -168,7 +168,7 @@ function Get-ExOSharedMailboxes {
         [int]$ResultSize = 500
     )
 
-    $Uri = "https://outlook.office365.com/adminapi/v2.0/$TenantID/Mailbox?`$select=ExternalDirectoryObjectId,DisplayName,PrimarySmtpAddress,RecipientTypeDetails"
+    $Uri = "https://outlook.office365.com/adminapi/v2.0/$TenantID/Mailbox?`$select=Guid,DisplayName,PrimarySmtpAddress,RecipientTypeDetails"
 
     do {
         $Body = @{
@@ -194,10 +194,10 @@ function Get-ExOSharedMailboxes {
         $Response = Invoke-RestMethod @Request
 
         $Response.Value |
-            Where-Object { $_.RecipientTypeDetails -eq 'SharedMailbox' -and -not [string]::IsNullOrEmpty($_.ExternalDirectoryObjectId) } |
+            Where-Object { $_.RecipientTypeDetails -eq 'SharedMailbox' -and -not [string]::IsNullOrEmpty($_.Guid) } |
             Select-Object @{
                 Name       = 'Id'
-                Expression = { $_.ExternalDirectoryObjectId }
+                Expression = { $_.Guid }
             },
             DisplayName,
             PrimarySmtpAddress

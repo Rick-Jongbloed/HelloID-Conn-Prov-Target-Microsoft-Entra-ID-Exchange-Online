@@ -1,7 +1,3 @@
-$actionContext = $('{ "Configuration": { "Organization": "consultancytest.onmicrosoft.com", "TenantID": "c11bef9d-6ee7-4687-8d62-92f76184085a", "AppId": "4b079120-43ab-4921-8a35-4bbf9c44b37a", "AppSecret": "", "UseCertificate": true, "AppCertificateBase64String": "MIIKmAIBAzCCClQGCSqGSIb3DQEHAaCCCkUEggpBMIIKPTCCBgYGCSqGSIb3DQEHAaCCBfcEggXzMIIF7zCCBesGCyqGSIb3DQEMCgECoIIE/jCCBPowHAYKKoZIhvcNAQwBAzAOBAi4Gi3z3g03xgICB9AEggTY689dT6j065lwIJw4gzWL7tMD Iz01OH46CUZzxUqq6nhN7eJ5uF5BtnElYjyDu7cv6TyZ6c3NQ8evnoU9CKtl8i9Xsa0NIJkd0trMktKxmPwz5iR+LoRsqsJS1fJc7WUEBd3jhIlfAWfud1aErZlV+91X31lVNI+LyHm6ABC9oJIJESjva2uvxXWN6DOfKw/Biu6Oy5cS7lp5rfUV +35P24knjEHs8dgQHQFDfeYVeaSVsPZ9bRmyPB5f9oSJWcVcZO2Ir5GUg7255DMn8yygYxQNrW2GaMduXt5bEHq4BoSFCG7kXfTpZzl6xJApJc0G+Om8kWq3irP0KN/4DL7753GO7nJc1vZvwZEAY81CWbcvzbEYvmqmZyHcf82eyHwy1FC5vrOO QFSVrPzIKOez8jqcQ1ItEmlPCSWuJJDtGnoR2/t/CbeFAiMXgrYrcPAp8oQ27Uzsnw2dk5Q+rDkD3PhXDu6D2QPHPP8pp9pZ6MTbFmp4C3cmGw/Gi4xVEJ5pMpveqWfONaeobwm8cO+NvVAhf3hdFxXQl7o50qO514PdckK9t/KHS1yQK+wLIt9e 3bc6RpAOBF2yjTtr6KYkwbWMkCeCb6exjCETadjfk7xpScp511Z21HqihVWWBkjleko+OG5sS6okVtwtBNo/TDV1veV4byaLg/CSWmoCvWVs4RNAWlUu2OumDi4F38WnAwG277jCgSa5vBBVYHsXGeawqmfVOHuPXwBAGHZ/1pMOrFHT2XIBMp4E Y8E/oL/2Oj5daWgwgpNei9cSULU5WZCILDfJMrJ3fg4zNb0Y66S3vRbCu4J4nF8c6gvrvDr0ZxWe9FvYZo9WQKs8uY85Vnrx4QInt2F4QOQtmKbKtAkBIf7BqFWUzNKGDZfqwkKUi3rB5pjMbj/xC2ondoAupW7AQm+VRH1bwm81xX0Apdp9I2QU F8+cA4OlbW9MCAbdtL3AE7EH1CohHS8Q77A96793BaPtU14ZcLsPAAR6svlhrJDrq/rI6eMhcgH3RqCQwe84Pon634Vb6apsNzUDcNySWl4dLs44N9SoWDmz/NSnXV/xsAoDZ2iUqjQDifQcTBiATNwkHVyHAlucIXvfEhLeRLxVtvQw3i0orjjg 0BT1k6GJ4WKBs2uBPYor8qwZqRl7Aq0F4UtiiHq9j+ATALEckwYvJIJeBw7wEv9tj6eQHOC57qaEega56Jlz6Zg6BFWK14ZkGIvMxlJieh8SKU/gLU32I6J5oA2Na630dUthia0d/fOU6syxIZrmXXRIEkRPSGIj+3kX4lSW7aLGy9knSH2iitW8 VfmVixnTVuvQ8MhCcMY73hHnKbWShZwg8PdPneP7meNGeQvC67WiObmtIsZV4xIip4DCJn/9mJrDC3biG9R2ZGE8HaFCqAZBug13E/iz65uWkaPwXTjiSU/3+gdEihaXqJI0ftwMYUIz6CU7bK13Mv6vJDNdrYr9ceCvP45UoO/cbqbJo0drnp25 spmNaFbTOzDdrf4okS4MjzblHUAIm4EIYLcmKQXpwy5Cmn/9gq57Zmhc00ZUq94rcAQHCydf47MSbZIu6Tf3EPdTH0fJ5WIsWGBZK32ssWOOv1Hy9KrKyHjWOFiFezApN9YUjPbcojJRFuflv/RdwIYr01fzqTGB2TATBgkqhkiG9w0BCRUxBgQE AQAAADBdBgkqhkiG9w0BCRQxUB5OAHQAZQAtAGIAYwAwAGQAZAAxAGMAOAAtADYAOQA5AGMALQA0ADUAMgA2AC0AOABjADMAYQAtAGQAZgBkADYAZAAzADYAOQA5AGYAYwA1MGMGCSsGAQQBgjcRATFWHlQATQBpAGMAcgBvAHMAbwBmAHQAIABC AGEAcwBlACAAQwByAHkAcAB0AG8AZwByAGEAcABoAGkAYwAgAFAAcgBvAHYAaQBkAGUAcgAgAHYAMQAuADAwggQvBgkqhkiG9w0BBwagggQgMIIEHAIBADCCBBUGCSqGSIb3DQEHATAcBgoqhkiG9w0BDAEDMA4ECAf/eYEYKb9hAgIH0ICCA+hU vUEhgmZ2xITD1ehLaKYtc1NrzHKlsclmxcV8DNokjgIfqgrrbHJSlRczV9Mlm2EvZNWJuzPHuELtOpbi6XoI7OzNxfy+A6Iw5iNI12lKazh3hkN3daw4FvmpW70vI1aHNyBuzrqOVT95pwjBCIZ8YB/y1TNH2nt/ZXmxAXh44dY7jFAU7izlGE61 mIoJZUNhPAcQq3vqcsr/DzqznTd/blgBYAT9Tnsa2yIIr0v3QH0HosPQpcVNlym5dKxArG7jTbj0dXES7UMkybf+eZcbWb6i0e6TwWJrNFu94KonbhaD/AUp0jexpW7AHNueCG9Xlmvk/CQ45C+xVvEewcdxdYM6Y2tfLNuJGm9CCLxTybDlecje yfEbxdvnERr8giEA9RWuZteHThOSL8LgGDHQ+Fo90CvkLPQNIBy8n8i/Go94tmJj5ZBjOa+HMellWJwPHTixdu22xwxB6GFPxqtGh8ISkatdmHZ8faFA8u+Lpkcq6fxYPsQQxKds4Ze++QKuuIsjmAhzMuk+sBpE9PgO9R4h9YL3nlC+bnuEIFTE Qld7NEzJpRM8gXp8nT6LQvIZWWj5JKyuufqun/ku9szS9+a13F+X7obbwu8lNFLBqIN2oyZN6tTBQQUyY6Q5vCv7keqsEooY/WRRtQy/FvHhUk0NXf4y96g+UG1xaVp9Uz2XaKwXbbql+wKOkMjutNpMdrHnKHGFSvlz9QVAbSetHYDfso6o2Cxk 5YSrcDfaqEzTe8N9QaDC5mji47q2fOxExjiF8rV33LfxIbXRIGCAgTflv4KKWkQz4Y9tuc7Ns0bZIBYSDwkJAjgEW3o0O4nHVaGXIoIM7fc/l/FJvNx+jM/DnFaVaNvgTDT3ZL8ZiFYv6stCg5rzHkG8rGHVTcxRI+QVXxWc8S/aPpIN8OkfPqZo 2JeiO1q9zm7RQ2QlcEgyTa0tlO9478gY0bZvv4OmqKpUgw+0Q/HRPYVUXY6iQbCtVQtRGfcWFFNFWMVAOUBkiYzoUTvv2WA1Z8pbPpGcNczHiu4TbOqmGo1YBDUeNq5CXd/BixLmlug6UYRWo6tBMYu+b/Rl522hR8LVg+5uIPUdlRX4XQrxvOVC 14GV0WJ+KH+jkOsVtN1H+l6qBDsU5EZJq9CyiSBakp3/oCUez0yI0TeuUD/xh9oDWDMvLAqg/xpLL8TFBgUyNzLGnXATxwh9IvJ+0EhD/4jOX8jgRxB7bBF7QSypxdWJjvtoE2qlV/ufOO/dWDIweuCbx6sRKM69+68QBG4Cib3GIc1WnEIMqOPQ oz0VWEXlaeB4ZlwHiG4LkQoPHhmYWex0dRIt9RnircoVMDswHzAHBgUrDgMCGgQUgJhwatnEZ1G4izs7GvrLL2k4Pj8EFIPZDKbc5AfQh9rdw7oeJQ1qe8+BAgIH0A==", "AppCertificatePassword": "4$xBh0^yX8PfwhL*O3lnt2OGTCrsz!^%" }, "DryRun": true, "Operation": "undefined", "Data": { "DisplayName": "Afas Entra (1000802 - AFAS)", "NickName": "Afas", "FamilyName": "Entra", "UserName": "afas.entra", "Title": "Consultant Software", "Department": null, "StartDate": "06/29/2026 00:00:00", "EndDate": "11/06/2026 00:00:00", "Manager": null, "ExternalId": "1000802" }, "CorrelationConfiguration": { "Enabled": false, "PersonField": "Person.ExternalId", "PersonFieldValue": null, "AccountField": null, "AccountFieldValue": null }, "AccountCorrelated": false, "References": { "Account": null, "ManagerAccount": null }, "Origin": "enforcement" }') | ConvertFrom-Json
-$outputContext = $('{ "Permissions": [], "Success": false, "AuditLogs": [] }') | ConvertFrom-Json
-$outputContext.Permissions = [System.Collections.ArrayList]$outputContext.Permissions
-
 #####################################################
 # HelloID-Conn-Prov-Target-MS-Entra-ExO-Permissions-SharedMailboxes-Import
 # Correlate accounts to shared mailbox permissions
@@ -128,7 +124,7 @@ function Get-ExOSharedMailboxes {
         [int]$ResultSize = 500
     )
 
-    $Uri = "https://outlook.office365.com/adminapi/v2.0/$TenantID/Mailbox?`$select=ExternalDirectoryObjectId,DisplayName,UserPrincipalName,PrimarySmtpAddress,RecipientTypeDetails,GrantSendOnBehalfTo,Identity,Guid"
+    $Uri = "https://outlook.office365.com/adminapi/v2.0/$TenantID/Mailbox?`$select=Guid,DisplayName,UserPrincipalName,RecipientTypeDetails,GrantSendOnBehalfTo,Identity"
 
     do {
         $Body = @{
@@ -154,13 +150,9 @@ function Get-ExOSharedMailboxes {
 
         $Response.Value |
             Where-Object RecipientTypeDetails -eq 'SharedMailbox' |
-            Select-Object @{
-                Name='ExternalDirectoryObjectId'
-                Expression={$_.ExternalDirectoryObjectId}
-            },
+            Select-Object Guid,
             DisplayName,
             UserPrincipalName,
-            PrimarySmtpAddress,
             GrantSendOnBehalfTo,
             Identity
 
@@ -429,7 +421,7 @@ try {
         $numberOfAccounts = $fullAccessUsers.Count
         $permission = @{
             PermissionReference = @{
-                Id         = $SharedMailbox.ExternalDirectoryObjectId
+                Id         = $SharedMailbox.Guid
                 Permission = 'FullAccess'
             }
             Description = $SharedMailbox.UserPrincipalName
@@ -458,7 +450,7 @@ try {
         $numberOfAccounts = $sendAsUsers.Count
         $permission = @{
             PermissionReference = @{
-                Id         = $SharedMailbox.ExternalDirectoryObjectId
+                Id         = $SharedMailbox.Guid
                 Permission = 'SendAs'
             }
             Description = $SharedMailbox.UserPrincipalName
@@ -493,7 +485,7 @@ try {
         $numberOfAccounts = $sendOnBehalfUsers.Count
         $permission = @{
             PermissionReference = @{
-                Id         = $SharedMailbox.ExternalDirectoryObjectId
+                Id         = $SharedMailbox.Guid
                 Permission = 'SendOnBehalf'
             }
             Description = $SharedMailbox.UserPrincipalName
