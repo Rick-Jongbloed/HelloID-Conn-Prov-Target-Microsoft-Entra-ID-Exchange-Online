@@ -38,15 +38,11 @@ function Get-MSEntraAccessToken {
     )
 
     try {
-        # Get the DER encoded bytes of the certificate
         $derBytes = $Certificate.RawData
-
-        # Compute the SHA-256 hash of the DER encoded bytes
         $sha256 = [System.Security.Cryptography.SHA256]::Create()
         $hashBytes = $sha256.ComputeHash($derBytes)
         $base64Thumbprint = [System.Convert]::ToBase64String($hashBytes).Replace('+', '-').Replace('/', '_').Replace('=', '')
 
-        # Create a JWT (JSON Web Token) header
         $header = @{
             'alg'      = 'RS256'
             'typ'      = 'JWT'
@@ -54,10 +50,8 @@ function Get-MSEntraAccessToken {
         } | ConvertTo-Json
         $base64Header = [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($header))
 
-        # Calculate the Unix timestamp (seconds since 1970-01-01T00:00:00Z) for 'exp', 'nbf' and 'iat'
         $currentUnixTimestamp = [Math]::Round(((Get-Date).ToUniversalTime() - ([DateTime]'1970-01-01T00:00:00Z').ToUniversalTime()).TotalSeconds)
 
-        # Create a JWT payload
         $payload = [ordered]@{
             'iss' = "$($ActionContext.Configuration.AppId)"
             'sub' = "$($ActionContext.Configuration.AppId)"
@@ -69,22 +63,18 @@ function Get-MSEntraAccessToken {
         } | ConvertTo-Json
         $base64Payload = [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($payload)).Replace('+', '-').Replace('/', '_').Replace('=', '')
 
-        # Extract the private key from the certificate
-        $rsaPrivate = $Certificate.PrivateKey
-        $rsa = [System.Security.Cryptography.RSACryptoServiceProvider]::new()
-        $rsa.ImportParameters($rsaPrivate.ExportParameters($true))
-
-        # Sign the JWT
-        $signatureInput = "$base64Header.$base64Payload"
-        $signature = $rsa.SignData([Text.Encoding]::UTF8.GetBytes($signatureInput), 'SHA256')
-        $base64Signature = [System.Convert]::ToBase64String($signature).Replace('+', '-').Replace('/', '_').Replace('=', '')
-
-        # Ensure the certificate has a private key
         if (-not $Certificate.HasPrivateKey -or -not $Certificate.PrivateKey) {
             throw 'The certificate does not have a private key.'
         }
 
-        # Create the JWT token
+        $rsaPrivate = $Certificate.PrivateKey
+        $rsa = [System.Security.Cryptography.RSACryptoServiceProvider]::new()
+        $rsa.ImportParameters($rsaPrivate.ExportParameters($true))
+
+        $signatureInput = "$base64Header.$base64Payload"
+        $signature = $rsa.SignData([Text.Encoding]::UTF8.GetBytes($signatureInput), 'SHA256')
+        $base64Signature = [System.Convert]::ToBase64String($signature).Replace('+', '-').Replace('/', '_').Replace('=', '')
+
         $jwtToken = "$($base64Header).$($base64Payload).$($base64Signature)"
 
         $createEntraAccessTokenBody = @{
@@ -143,6 +133,7 @@ function Resolve-MS-Entra-ExoError {
                     }
                 }
             }
+
             $errorDetailsObject = $httpErrorObj.ErrorDetails
             if ($errorDetailsObject.error_description) {
                 $httpErrorObj.FriendlyMessage = $errorDetailsObject.error_description
@@ -160,6 +151,7 @@ function Resolve-MS-Entra-ExoError {
         catch {
             $httpErrorObj.FriendlyMessage = $httpErrorObj.ErrorDetails
         }
+
         Write-Output $httpErrorObj
     }
 }
@@ -176,7 +168,7 @@ function Get-ExOSharedMailboxes {
         [int]$ResultSize = 500
     )
 
-    $Uri = "https://outlook.office365.com/adminapi/v2.0/$TenantID/Mailbox?`$select=ExternalDirectoryObjectId,DisplayName,RecipientTypeDetails"
+    $Uri = "https://outlook.office365.com/adminapi/v2.0/$TenantID/Mailbox?`$select=ExternalDirectoryObjectId,DisplayName,PrimarySmtpAddress,RecipientTypeDetails"
 
     do {
         $Body = @{
@@ -196,17 +188,19 @@ function Get-ExOSharedMailboxes {
             Body        = [System.Text.Encoding]::UTF8.GetBytes(
                 (ConvertTo-Json $Body -Depth 10 -Compress)
             )
+            ErrorAction = 'Stop'
         }
 
         $Response = Invoke-RestMethod @Request
 
         $Response.Value |
-            Where-Object RecipientTypeDetails -eq 'SharedMailbox' |
+            Where-Object { $_.RecipientTypeDetails -eq 'SharedMailbox' -and -not [string]::IsNullOrEmpty($_.ExternalDirectoryObjectId) } |
             Select-Object @{
-                Name='Guid'
-                Expression={$_.ExternalDirectoryObjectId}
+                Name       = 'Id'
+                Expression = { $_.ExternalDirectoryObjectId }
             },
-            DisplayName
+            DisplayName,
+            PrimarySmtpAddress
 
         $Uri = $Response.'@odata.nextLink'
 
@@ -221,9 +215,10 @@ try {
     $exoAccessToken = Get-MSEntraAccessToken -Certificate $certificate -Resource 'https://outlook.office365.com'
 
     $ExOAuthorization = @{
-        Authorization  = "Bearer $($exoAccessToken)"
-        'Content-Type' = 'application/json'
-        Accept         = 'application/json'
+        Authorization      = "Bearer $($exoAccessToken)"
+        'Content-Type'     = 'application/json'
+        Accept             = 'application/json'
+        'X-ResponseFormat' = 'json'
     }
 
     Write-Information 'Successfully authenticated the Exchange Admin API'
@@ -232,7 +227,7 @@ try {
         throw 'Organization field is required but is not configured'
     }
 
-    $ExOAuthorization['X-AnchorMailbox'] = "APP:SystemMailbox{bb558c35-97f1-4cb9-8ff7-d53741dc928c}@$($ActionContext.Configuration.Organization)"
+    $ExOAuthorization['X-AnchorMailbox'] = "UPN:SystemMailbox{bb558c35-97f1-4cb9-8ff7-d53741dc928c}@$($ActionContext.Configuration.Organization.TrimStart('@').Trim())"
 
     $actionMessage = 'retrieving shared mailboxes'
     Write-Information $actionMessage
@@ -240,37 +235,26 @@ try {
     Write-Information "Retrieved $(($SharedMailboxes | Measure-Object).Count) shared mailboxes."
 
     $SharedMailboxes | ForEach-Object {
-        # Shorten DisplayName to max. 100 chars (83 because ' - Send on Behalf' is 17 char)
         $displayName = "Shared Mailbox - $($_.DisplayName)"
         $displayName = $displayName.substring(0, [System.Math]::Min(83, $displayName.Length))
 
-        $outputContext.Permissions.Add(
-            @{
-                displayName    = $displayName + ' - Full Access'
-                identification = @{
-                    Id         = $_.Guid
-                    Permission = 'FullAccess'
-                }
+        foreach ($permission in @('FullAccess', 'SendAs', 'SendOnBehalf')) {
+            $permissionDisplayName = switch ($permission) {
+                'FullAccess'   { 'Full Access' }
+                'SendAs'       { 'Send As' }
+                'SendOnBehalf' { 'Send on Behalf' }
             }
-        )
-        $outputContext.Permissions.Add(
-            @{
-                displayName    = $displayName + ' - Send As'
-                identification = @{
-                    Id         = $_.Guid
-                    Permission = 'SendAs'
+
+            $null = $outputContext.Permissions.Add(
+                @{
+                    displayName    = "$displayName - $permissionDisplayName"
+                    identification = @{
+                        Id         = $_.Id
+                        Permission = $permission
+                    }
                 }
-            }
-        )
-        $outputContext.Permissions.Add(
-            @{
-                displayName    = $displayName + ' - Send on Behalf'
-                identification = @{
-                    Id         = $_.Guid
-                    Permission = 'SendOnBehalf'
-                }
-            }
-        )
+            )
+        }
     }
 }
 catch {
@@ -286,12 +270,8 @@ catch {
         $warningMessage = "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
     }
 
-    # Set Success to false
     $outputContext.Success = $false
-
     Write-Warning $warningMessage
-
-    # Required to write an error as the import of permissions doesn't show auditlog
     Write-Error $auditMessage
 }
 #endregion script
