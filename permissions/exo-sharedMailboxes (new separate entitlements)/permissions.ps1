@@ -8,67 +8,104 @@
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
 
 #region Functions
-function Get-MSGraphAuthorization {
-    [CmdletBinding(DefaultParameterSetName = 'Resource')]
+function Get-MSEntraCertificate {
+    [CmdletBinding()]
+    param()
+
+    try {
+        $rawCertificate = [System.Convert]::FromBase64String($ActionContext.Configuration.AppCertificateBase64String)
+        $certificate = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new(
+            $rawCertificate,
+            $ActionContext.Configuration.AppCertificatePassword,
+            [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable
+        )
+
+        Write-Output $certificate
+    }
+    catch {
+        $PSCmdlet.ThrowTerminatingError($_)
+    }
+}
+
+function Get-MSEntraAccessToken {
+    [CmdletBinding()]
     param(
-        [parameter(ValueFromPipelineByPropertyName, Mandatory)]
-        [string]$TenantId,
+        [Parameter(Mandatory)]
+        $Certificate,
 
-        [parameter(ValueFromPipelineByPropertyName, Mandatory)]
-        [string]$ClientId,
-
-        [parameter(ValueFromPipelineByPropertyName, Mandatory)]
-        [string]$ClientSecret,
-
-        [parameter(ParameterSetName = 'Resource')]
-        [string]$Resource = 'https://graph.microsoft.com',
-
-        [parameter(ParameterSetName = 'Scope')]
-        [string]$Scope = 'https://graph.microsoft.com/.default',
-
-        [parameter()]
-        [string]$GrantType = 'client_credentials',
-
-        [parameter()]
-        [switch]$AccessToken = $false
+        [Parameter()]
+        [string]$Resource = 'https://graph.microsoft.com'
     )
 
     try {
-        $createAccessTokenBody = @{
-            grant_type    = $GrantType
-            client_id     = $ClientId
-            client_secret = $ClientSecret
+        # Get the DER encoded bytes of the certificate
+        $derBytes = $Certificate.RawData
+
+        # Compute the SHA-256 hash of the DER encoded bytes
+        $sha256 = [System.Security.Cryptography.SHA256]::Create()
+        $hashBytes = $sha256.ComputeHash($derBytes)
+        $base64Thumbprint = [System.Convert]::ToBase64String($hashBytes).Replace('+', '-').Replace('/', '_').Replace('=', '')
+
+        # Create a JWT (JSON Web Token) header
+        $header = @{
+            'alg'      = 'RS256'
+            'typ'      = 'JWT'
+            'x5t#S256' = $base64Thumbprint
+        } | ConvertTo-Json
+        $base64Header = [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($header))
+
+        # Calculate the Unix timestamp (seconds since 1970-01-01T00:00:00Z) for 'exp', 'nbf' and 'iat'
+        $currentUnixTimestamp = [Math]::Round(((Get-Date).ToUniversalTime() - ([DateTime]'1970-01-01T00:00:00Z').ToUniversalTime()).TotalSeconds)
+
+        # Create a JWT payload
+        $payload = [ordered]@{
+            'iss' = "$($ActionContext.Configuration.AppId)"
+            'sub' = "$($ActionContext.Configuration.AppId)"
+            'aud' = "https://login.microsoftonline.com/$($ActionContext.Configuration.TenantID)/oauth2/token"
+            'exp' = ($currentUnixTimestamp + 3600)
+            'nbf' = ($currentUnixTimestamp - 300)
+            'iat' = $currentUnixTimestamp
+            'jti' = [Guid]::NewGuid().ToString()
+        } | ConvertTo-Json
+        $base64Payload = [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($payload)).Replace('+', '-').Replace('/', '_').Replace('=', '')
+
+        # Extract the private key from the certificate
+        $rsaPrivate = $Certificate.PrivateKey
+        $rsa = [System.Security.Cryptography.RSACryptoServiceProvider]::new()
+        $rsa.ImportParameters($rsaPrivate.ExportParameters($true))
+
+        # Sign the JWT
+        $signatureInput = "$base64Header.$base64Payload"
+        $signature = $rsa.SignData([Text.Encoding]::UTF8.GetBytes($signatureInput), 'SHA256')
+        $base64Signature = [System.Convert]::ToBase64String($signature).Replace('+', '-').Replace('/', '_').Replace('=', '')
+
+        # Ensure the certificate has a private key
+        if (-not $Certificate.HasPrivateKey -or -not $Certificate.PrivateKey) {
+            throw 'The certificate does not have a private key.'
         }
 
-        switch ($PsCmdlet.ParameterSetName) {
-            'Resource' {
-                $createAccessTokenBody['resource'] = $Resource
-            }
-            default {
-                $createAccessTokenBody['scope'] = $Scope
-            }
+        # Create the JWT token
+        $jwtToken = "$($base64Header).$($base64Payload).$($base64Signature)"
+
+        $createEntraAccessTokenBody = @{
+            grant_type            = 'client_credentials'
+            client_id             = $ActionContext.Configuration.AppId
+            client_assertion_type = 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer'
+            client_assertion      = $jwtToken
+            resource              = $Resource
         }
 
-        $createAccessTokenSplatParams = @{
-            Uri         = "https://login.microsoftonline.com/$($TenantId)/oauth2/token"
+        $createEntraAccessTokenSplatParams = @{
+            Uri         = "https://login.microsoftonline.com/$($ActionContext.Configuration.TenantID)/oauth2/token"
+            Body        = $createEntraAccessTokenBody
             Method      = 'POST'
-            Body        = $createAccessTokenBody
             ContentType = 'application/x-www-form-urlencoded'
             Verbose     = $false
             ErrorAction = 'Stop'
         }
 
-        $graphAccessToken = (Invoke-RestMethod @createAccessTokenSplatParams).access_token
-
-        if ($AccessToken -eq $true) {
-            return $graphAccessToken
-        }
-
-        return @{
-            Authorization  = "Bearer $($graphAccessToken)"
-            'Content-Type' = 'application/json'
-            Accept         = 'application/json'
-        }
+        $createEntraAccessTokenResponse = Invoke-RestMethod @createEntraAccessTokenSplatParams
+        Write-Output $createEntraAccessTokenResponse.access_token
     }
     catch {
         $PSCmdlet.ThrowTerminatingError($_)
@@ -93,7 +130,10 @@ function Resolve-MS-Entra-ExoError {
 
         try {
             if (-not [string]::IsNullOrEmpty($ErrorObject.ErrorDetails.Message)) {
-                $httpErrorObj.ErrorDetails = $ErrorObject.ErrorDetails.Message | ConvertFrom-Json
+                $parsedDetails = $ErrorObject.ErrorDetails.Message | ConvertFrom-Json
+                if ($null -ne $parsedDetails) {
+                    $httpErrorObj.ErrorDetails = $parsedDetails
+                }
             }
             elseif ($ErrorObject.Exception.GetType().FullName -eq 'System.Net.WebException') {
                 if ($null -ne $ErrorObject.Exception.Response) {
@@ -123,89 +163,117 @@ function Resolve-MS-Entra-ExoError {
         Write-Output $httpErrorObj
     }
 }
+
+function Get-ExOSharedMailboxes {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [hashtable]$Authorization,
+
+        [Parameter(Mandatory)]
+        [string]$TenantID,
+
+        [int]$ResultSize = 500
+    )
+
+    $Uri = "https://outlook.office365.com/adminapi/v2.0/$TenantID/Mailbox?`$select=ExternalDirectoryObjectId,DisplayName,RecipientTypeDetails"
+
+    do {
+        $Body = @{
+            CmdletInput = @{
+                CmdletName = 'Get-Mailbox'
+                Parameters = @{
+                    ResultSize = $ResultSize
+                }
+            }
+        }
+
+        $Request = @{
+            Uri         = $Uri
+            Method      = 'Post'
+            Headers     = $Authorization
+            ContentType = 'application/json'
+            Body        = [System.Text.Encoding]::UTF8.GetBytes(
+                (ConvertTo-Json $Body -Depth 10 -Compress)
+            )
+        }
+
+        $Response = Invoke-RestMethod @Request
+
+        $Response.Value |
+            Where-Object RecipientTypeDetails -eq 'SharedMailbox' |
+            Select-Object @{
+                Name='Guid'
+                Expression={$_.ExternalDirectoryObjectId}
+            },
+            DisplayName
+
+        $Uri = $Response.'@odata.nextLink'
+
+    } while ($Uri)
+}
 #endregion Functions
 
 #region script
 try {
-    if ($ActionContext.Configuration.ExO.Integration) {
-        $ExOAuthorization = $ActionContext.Configuration | Get-MSGraphAuthorization -Resource 'https://outlook.office365.com'
-        Write-Verbose -Verbose 'Succesfully authenticated the Exchange Admin API'
+    $actionMessage = 'connecting to MS-Entra'
+    $certificate = Get-MSEntraCertificate
+    $exoAccessToken = Get-MSEntraAccessToken -Certificate $certificate -Resource 'https://outlook.office365.com'
 
-        if (-not [String]::IsNullOrEmpty($ActionContext.Configuration.ExO.AnchorMailboxDomain)) {
-            if ($ActionContext.Configuration.ExO.AnchorMailboxDomain -notlike '*onmicrosoft.com') {
-                $Domain = $ActionContext.Configuration.ExO.AnchorMailboxDomain -split '.' | Select-Object -First 1
-                $ActionContext.Configuration.ExO.AnchorMailboxDomain = "$($Domain).onmicrosoft.com"
-            }
+    $ExOAuthorization = @{
+        Authorization  = "Bearer $($exoAccessToken)"
+        'Content-Type' = 'application/json'
+        Accept         = 'application/json'
+    }
 
-            $ExOAuthorization['X-AnchorMailbox'] = "APP:SystemMailbox{bb558c35-97f1-4cb9-8ff7-d53741dc928c}@$($ActionContext.Configuration.ExO.AnchorMailboxDomain.TrimStart('@').Trim())"
-        }
+    Write-Information 'Successfully authenticated the Exchange Admin API'
 
-        $GetMailboxParameters = @{
-            ResultSize           = 1000
-            RecipientTypeDetails = 'SharedMailbox'
-            SortBy               = 'Alias'
-        }
+    if ([string]::IsNullOrEmpty($ActionContext.Configuration.Organization)) {
+        throw 'Organization field is required but is not configured'
+    }
 
-        $LastSharedMailboxAlias = $Null
+    $ExOAuthorization['X-AnchorMailbox'] = "APP:SystemMailbox{bb558c35-97f1-4cb9-8ff7-d53741dc928c}@$($ActionContext.Configuration.Organization)"
 
-        $SharedMailboxes = do {
-            if ($LastSharedMailboxAlias) {
-                $GetMailboxParameters['Filter'] = "Alias -gt '$($LastSharedMailboxAlias)'"
-            }
+    $actionMessage = 'retrieving shared mailboxes'
+    Write-Information $actionMessage
+    $SharedMailboxes = Get-ExOSharedMailboxes -Authorization $ExOAuthorization -TenantID $ActionContext.Configuration.TenantID
+    Write-Information "Retrieved $(($SharedMailboxes | Measure-Object).Count) shared mailboxes."
 
-            $ExOGetMailboxes = @{
-                Uri         = "https://outlook.office365.com/adminapi/beta/$($ActionContext.Configuration.TenantId)/InvokeCommand"
-                Method      = 'Post'
-                Body        = @{
-                    CmdletInput = @{
-                        CmdletName = 'Get-Mailbox'
-                        Parameters = $GetMailboxParameters
-                    }
+    $SharedMailboxes | ForEach-Object {
+        # Shorten DisplayName to max. 100 chars (83 because ' - Send on Behalf' is 17 char)
+        $displayName = "Shared Mailbox - $($_.DisplayName)"
+        $displayName = $displayName.substring(0, [System.Math]::Min(83, $displayName.Length))
+
+        $outputContext.Permissions.Add(
+            @{
+                displayName    = $displayName + ' - Full Access'
+                identification = @{
+                    Id         = $_.Guid
+                    Permission = 'FullAccess'
                 }
-                ContentType = 'application/json'
-                Headers     = $ExOAuthorization
             }
-
-            $ExOGetMailboxes.Body = [System.Text.Encoding]::UTF8.GetBytes(
-                (ConvertTo-Json -InputObject $ExOGetMailboxes.Body -Depth 10 -Compress)
-            )
-
-            $MailboxPage = Invoke-RestMethod @ExOGetMailboxes | Select-Object -ExpandProperty 'Value' | Select-Object -Property @(
-                'Guid'
-                'DisplayName'
-                'PrimarySmtpAddress'
-                'Alias'
-            )
-
-            if (($MailboxPage).Count -eq $GetMailboxParameters.ResultSize) {
-                $LastSharedMailboxAlias = $MailboxPage[-1].Alias
+        )
+        $outputContext.Permissions.Add(
+            @{
+                displayName    = $displayName + ' - Send As'
+                identification = @{
+                    Id         = $_.Guid
+                    Permission = 'SendAs'
+                }
             }
-
-            $MailboxPage
-
-        } while ($MailboxPage.Count -eq $GetMailboxParameters.ResultSize)
-
-        Write-Information "Retrieved $(($SharedMailboxes | Measure-Object).Count) shared mailboxes."
-
-        foreach ($SharedMailbox in $SharedMailboxes) {
-            foreach ($PermissionLevel in @('Full Access', 'Send As', 'Send On Behalf')) {
-                $OutputContext.Permissions.Add(
-                    @{
-                        DisplayName    = "$($SharedMailbox.DisplayName -replace ('(?s)^(.{80}).{4,}$', '$1...')) - $($PermissionLevel) ($($SharedMailbox.PrimarySmtpAddress))" -replace ('(?s)^(.{97}).{4,}$', '$1...')
-                        Identification = @{
-                            Reference  = $SharedMailbox.Guid
-                            Permission = $PermissionLevel -replace (' ', '')
-                        }
-                    }
-                )
+        )
+        $outputContext.Permissions.Add(
+            @{
+                displayName    = $displayName + ' - Send on Behalf'
+                identification = @{
+                    Id         = $_.Guid
+                    Permission = 'SendOnBehalf'
+                }
             }
-        }
-
-        $OutputContext.Success = $true
+        )
     }
 }
 catch {
-    $OutputContext.Success = $false
     $ex = $PSItem
     if ($($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or
         $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
@@ -218,7 +286,12 @@ catch {
         $warningMessage = "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
     }
 
+    # Set Success to false
+    $outputContext.Success = $false
+
     Write-Warning $warningMessage
+
+    # Required to write an error as the import of permissions doesn't show auditlog
     Write-Error $auditMessage
 }
 #endregion script
