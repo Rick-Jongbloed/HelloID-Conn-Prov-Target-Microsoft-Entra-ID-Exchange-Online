@@ -282,7 +282,7 @@ function Set-ExOMailboxRevokeGrantSendOnBehalfV2 {
                 Identity            = $Identity
                 GrantSendOnBehalfTo = @{
                     '@odata.type' = '#Exchange.GenericHashTable'
-                    remove        = $GrantSendOnBehalfTo
+                    remove        = @($GrantSendOnBehalfTo)
                 }
             }
         }
@@ -301,6 +301,7 @@ function Set-ExOMailboxRevokeGrantSendOnBehalfV2 {
     $Response = Invoke-RestMethod @Request
     $Response
 }
+
 #endregion Functions
 
 #region script

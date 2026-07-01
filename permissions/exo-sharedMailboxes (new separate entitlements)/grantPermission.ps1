@@ -283,7 +283,7 @@ function Set-ExOMailboxGrantSendOnBehalfV2 {
                 Identity            = $Identity
                 GrantSendOnBehalfTo = @{
                     '@odata.type' = '#Exchange.GenericHashTable'
-                    add           = $GrantSendOnBehalfTo
+                    add           = @($GrantSendOnBehalfTo)
                 }
             }
         }
@@ -302,6 +302,7 @@ function Set-ExOMailboxGrantSendOnBehalfV2 {
     $Response = Invoke-RestMethod @Request
     $Response
 }
+
 #endregion Functions
 
 #region script
