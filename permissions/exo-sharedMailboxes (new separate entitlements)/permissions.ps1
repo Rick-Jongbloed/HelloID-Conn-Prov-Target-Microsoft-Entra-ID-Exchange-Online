@@ -206,6 +206,38 @@ function Get-ExOSharedMailboxes {
 
     } while ($Uri)
 }
+
+function Add-HelloIDSharedMailboxPermissions {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [object]$SharedMailbox,
+
+        [Parameter(Mandatory)]
+        [object]$PermissionOutputContext
+    )
+
+    $displayName = "Shared Mailbox - $($SharedMailbox.DisplayName)"
+    $displayName = $displayName.substring(0, [System.Math]::Min(83, $displayName.Length))
+
+    foreach ($permission in @('FullAccess', 'SendAs', 'SendOnBehalf')) {
+        $permissionDisplayName = switch ($permission) {
+            'FullAccess'   { 'Full Access' }
+            'SendAs'       { 'Send As' }
+            'SendOnBehalf' { 'Send on Behalf' }
+        }
+
+        $null = $PermissionOutputContext.Permissions.Add(
+            @{
+                displayName    = "$displayName - $permissionDisplayName"
+                identification = @{
+                    Id         = $SharedMailbox.Id
+                    Permission = $permission
+                }
+            }
+        )
+    }
+}
 #endregion Functions
 
 #region script
@@ -227,7 +259,7 @@ try {
         throw 'Organization field is required but is not configured'
     }
 
-    $ExOAuthorization['X-AnchorMailbox'] = "UPN:SystemMailbox{bb558c35-97f1-4cb9-8ff7-d53741dc928c}@$($ActionContext.Configuration.Organization.TrimStart('@').Trim())"
+    $ExOAuthorization['X-AnchorMailbox'] = "APP:SystemMailbox{bb558c35-97f1-4cb9-8ff7-d53741dc928c}@$($ActionContext.Configuration.Organization.TrimStart('@').Trim())"
 
     $actionMessage = 'retrieving shared mailboxes'
     Write-Information $actionMessage
@@ -235,26 +267,7 @@ try {
     Write-Information "Retrieved $(($SharedMailboxes | Measure-Object).Count) shared mailboxes."
 
     $SharedMailboxes | ForEach-Object {
-        $displayName = "Shared Mailbox - $($_.DisplayName)"
-        $displayName = $displayName.substring(0, [System.Math]::Min(83, $displayName.Length))
-
-        foreach ($permission in @('FullAccess', 'SendAs', 'SendOnBehalf')) {
-            $permissionDisplayName = switch ($permission) {
-                'FullAccess'   { 'Full Access' }
-                'SendAs'       { 'Send As' }
-                'SendOnBehalf' { 'Send on Behalf' }
-            }
-
-            $null = $outputContext.Permissions.Add(
-                @{
-                    displayName    = "$displayName - $permissionDisplayName"
-                    identification = @{
-                        Id         = $_.Id
-                        Permission = $permission
-                    }
-                }
-            )
-        }
+        Add-HelloIDSharedMailboxPermissions -SharedMailbox $_ -PermissionOutputContext $outputContext
     }
 }
 catch {
