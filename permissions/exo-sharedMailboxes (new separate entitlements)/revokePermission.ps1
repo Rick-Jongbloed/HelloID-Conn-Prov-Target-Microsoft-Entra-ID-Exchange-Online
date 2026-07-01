@@ -305,11 +305,14 @@ function Set-ExOMailboxRevokeGrantSendOnBehalfV2 {
 
 #region script
 try {
+    $actionMessage = 'validating account reference'
+
     # Verify account reference
     if ([string]::IsNullOrEmpty($ActionContext.References.Account)) {
         throw "The account reference could not be found"
     }
 
+    $actionMessage = 'authenticating to the Exchange Admin API'
     $certificate = Get-MSEntraCertificate
     $exoAccessToken = Get-MSEntraAccessToken -Certificate $certificate -Resource 'https://outlook.office365.com'
 
@@ -331,6 +334,8 @@ try {
 
         $ExOAuthorization['X-AnchorMailbox'] = "APP:SystemMailbox{bb558c35-97f1-4cb9-8ff7-d53741dc928c}@$($anchorMailboxDomain.TrimStart('@').Trim())"
     }
+
+    $actionMessage = "revoking permission [$($ActionContext.References.Permission.Permission)] on shared mailbox [$($ActionContext.References.Permission.Id)] from account [$($ActionContext.References.Account)]"
 
     switch ($ActionContext.References.Permission.Permission) {
         'FullAccess' {
