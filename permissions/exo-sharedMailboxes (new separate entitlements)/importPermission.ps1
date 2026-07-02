@@ -285,144 +285,6 @@ function Get-ExORecipientPermissions {
     $Response.Value
 }
 
-function Write-HelloIDSharedMailboxFullAccessPermission {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)]
-        [object]$SharedMailbox,
-
-        [Parameter(Mandatory)]
-        [hashtable]$MailboxPermissions,
-
-        [Parameter(Mandatory)]
-        [hashtable]$Mailboxes
-    )
-
-    $fullAccessUsers = @()
-    $fullAccessPermissions = $MailboxPermissions[$SharedMailbox.Identity] | Where-Object {
-        'FullAccess' -in $_.AccessRights
-    }
-
-    foreach ($record in $fullAccessPermissions) {
-        $fullAccessUser = $Mailboxes[$record.User].ExternalDirectoryObjectId
-        if ($fullAccessUser) { $fullAccessUsers += $fullAccessUser }
-    }
-
-    $numberOfAccounts = $fullAccessUsers.Count
-    $permission = @{
-        PermissionReference = @{
-            Id         = $SharedMailbox.Guid
-            Permission = 'FullAccess'
-        }
-        Description = $SharedMailbox.UserPrincipalName
-        DisplayName = 'Shared Mailbox - ' + $SharedMailbox.DisplayName + ' - Full Access'
-    }
-
-    $accountsBatchSize = 500
-    if ($numberOfAccounts -gt 0) {
-        $batches = 0..($numberOfAccounts - 1) | Group-Object { [math]::Floor($_ / $accountsBatchSize) }
-        foreach ($batch in $batches) {
-            $permission.AccountReferences = [array]($batch.Group | ForEach-Object { @($fullAccessUsers[$_]) })
-            Write-Output $permission
-        }
-    }
-}
-
-function Write-HelloIDSharedMailboxSendAsPermission {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)]
-        [object]$SharedMailbox,
-
-        [Parameter(Mandatory)]
-        [hashtable]$RecipientPermissions,
-
-        [Parameter(Mandatory)]
-        [hashtable]$Mailboxes
-    )
-
-    $sendAsUsers = @()
-    $sendAsPermissions = $RecipientPermissions[$SharedMailbox.Identity] | Where-Object {
-        'SendAs' -in $_.AccessRights
-    }
-
-    foreach ($record in $sendAsPermissions) {
-        $sendAsUser = $Mailboxes[$record.Trustee].ExternalDirectoryObjectId
-        if ($sendAsUser) { $sendAsUsers += $sendAsUser }
-    }
-
-    $numberOfAccounts = $sendAsUsers.Count
-    $permission = @{
-        PermissionReference = @{
-            Id         = $SharedMailbox.Guid
-            Permission = 'SendAs'
-        }
-        Description = $SharedMailbox.UserPrincipalName
-        DisplayName = 'Shared Mailbox - ' + $SharedMailbox.DisplayName + ' - Send As'
-    }
-
-    $accountsBatchSize = 500
-    if ($numberOfAccounts -gt 0) {
-        $batches = 0..($numberOfAccounts - 1) | Group-Object { [math]::Floor($_ / $accountsBatchSize) }
-        foreach ($batch in $batches) {
-            $permission.AccountReferences = [array]($batch.Group | ForEach-Object { @($sendAsUsers[$_]) })
-            Write-Output $permission
-        }
-    }
-}
-
-function Write-HelloIDSharedMailboxSendOnBehalfPermission {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)]
-        [object]$SharedMailbox,
-
-        [Parameter(Mandatory)]
-        [hashtable]$Mailboxes,
-
-        [Parameter(Mandatory)]
-        [hashtable]$Identities
-    )
-
-    $sendOnBehalfUsers = @()
-    if ($null -ne $SharedMailbox.GrantSendOnBehalfTo -and $SharedMailbox.GrantSendOnBehalfTo.Count -gt 0) {
-        foreach ($trustee in $SharedMailbox.GrantSendOnBehalfTo) {
-            $sendOnBehalfUser = $null
-            $trusteeValue = [string]$trustee
-
-            $trusteeMailbox = $Mailboxes[$trusteeValue]
-            if (-not $trusteeMailbox) {
-                $trusteeMailbox = $Identities[$trusteeValue]
-            }
-
-            if ($trusteeMailbox) {
-                $sendOnBehalfUser = $trusteeMailbox.ExternalDirectoryObjectId
-            }
-
-            if ($sendOnBehalfUser) { $sendOnBehalfUsers += $sendOnBehalfUser }
-        }
-    }
-
-    $numberOfAccounts = $sendOnBehalfUsers.Count
-    $permission = @{
-        PermissionReference = @{
-            Id         = $SharedMailbox.Guid
-            Permission = 'SendOnBehalf'
-        }
-        Description = $SharedMailbox.UserPrincipalName
-        DisplayName = 'Shared Mailbox - ' + $SharedMailbox.DisplayName + ' - Send on Behalf'
-    }
-
-    $accountsBatchSize = 500
-    if ($numberOfAccounts -gt 0) {
-        $batches = 0..($numberOfAccounts - 1) | Group-Object { [math]::Floor($_ / $accountsBatchSize) }
-        foreach ($batch in $batches) {
-            $permission.AccountReferences = [array]($batch.Group | ForEach-Object { @($sendOnBehalfUsers[$_]) })
-            Write-Output $permission
-        }
-    }
-}
-
 function Resolve-MS-Entra-ExoError {
     [CmdletBinding()]
     param(
@@ -547,18 +409,97 @@ try {
 
     $Identities = $Mailboxes | Group-Object -Property 'Identity' -AsHashTable -AsString
     $Mailboxes = $Mailboxes | Group-Object -Property 'UserPrincipalName' -AsHashTable -AsString
+
     foreach ($SharedMailbox in $SharedMailboxes) {
-        Write-HelloIDSharedMailboxFullAccessPermission -SharedMailbox $SharedMailbox `
-            -MailboxPermissions $MailboxPermissions `
-            -Mailboxes $Mailboxes
+        # Full Access
+        $fullAccessUsers = @()
+        $fullAccessPermissions = $MailboxPermissions[$SharedMailbox.Identity] | Where-Object {
+            'FullAccess' -in $_.AccessRights
+        }
 
-        Write-HelloIDSharedMailboxSendAsPermission -SharedMailbox $SharedMailbox `
-            -RecipientPermissions $RecipientPermissions `
-            -Mailboxes $Mailboxes
+        foreach ($record in $fullAccessPermissions) {
+            $fullAccessUser = $Mailboxes[$record.User].ExternalDirectoryObjectId
+            if ($fullAccessUser) { $fullAccessUsers += $fullAccessUser }
+        }
 
-        Write-HelloIDSharedMailboxSendOnBehalfPermission -SharedMailbox $SharedMailbox `
-            -Mailboxes $Mailboxes `
-            -Identities $Identities
+        $permission = @{
+            PermissionReference = @{
+                Id         = $SharedMailbox.Guid
+                Permission = 'FullAccess'
+            }
+            Description = $SharedMailbox.UserPrincipalName
+            DisplayName = 'Shared Mailbox - ' + $SharedMailbox.DisplayName + ' - Full Access'
+        }
+
+        $numberOfAccounts = $fullAccessUsers.Count
+        $batchSize = 500
+        for ($i = 0; $i -lt $numberOfAccounts; $i += $batchSize) {
+            $permission.AccountReferences = $fullAccessUsers[$i..([Math]::Min($i + $batchSize - 1, $numberOfAccounts - 1))]
+            Write-Output $permission
+        }
+
+        # Send As
+        $sendAsUsers = @()
+        $sendAsPermissions = $RecipientPermissions[$SharedMailbox.Identity] | Where-Object {
+            'SendAs' -in $_.AccessRights
+        }
+
+        foreach ($record in $sendAsPermissions) {
+            $sendAsUser = $Mailboxes[$record.Trustee].ExternalDirectoryObjectId
+            if ($sendAsUser) { $sendAsUsers += $sendAsUser }
+        }
+
+        $permission = @{
+            PermissionReference = @{
+                Id         = $SharedMailbox.Guid
+                Permission = 'SendAs'
+            }
+            Description = $SharedMailbox.UserPrincipalName
+            DisplayName = 'Shared Mailbox - ' + $SharedMailbox.DisplayName + ' - Send As'
+        }
+
+        $numberOfAccounts = $sendAsUsers.Count
+        $batchSize = 500
+        for ($i = 0; $i -lt $numberOfAccounts; $i += $batchSize) {
+            $permission.AccountReferences = $sendAsUsers[$i..([Math]::Min($i + $batchSize - 1, $numberOfAccounts - 1))]
+            Write-Output $permission
+        }
+
+        # Send On Behalf
+        $sendOnBehalfUsers = @()
+        if ($null -ne $SharedMailbox.GrantSendOnBehalfTo -and $SharedMailbox.GrantSendOnBehalfTo.Count -gt 0) {
+            foreach ($trustee in $SharedMailbox.GrantSendOnBehalfTo) {
+                $sendOnBehalfUser = $null
+                $trusteeValue = [string]$trustee
+
+                $trusteeMailbox = $Mailboxes[$trusteeValue]
+                if (-not $trusteeMailbox) {
+                    $trusteeMailbox = $Identities[$trusteeValue]
+                }
+
+                if ($trusteeMailbox) {
+                    $sendOnBehalfUser = $trusteeMailbox.ExternalDirectoryObjectId
+                }
+
+                if ($sendOnBehalfUser) { $sendOnBehalfUsers += $sendOnBehalfUser }
+            }
+        }
+
+        $permission = @{
+            PermissionReference = @{
+                Id         = $SharedMailbox.Guid
+                Permission = 'SendOnBehalf'
+            }
+            Description = $SharedMailbox.UserPrincipalName
+            DisplayName = 'Shared Mailbox - ' + $SharedMailbox.DisplayName + ' - Send on Behalf'
+        }
+
+        $numberOfAccounts = $sendOnBehalfUsers.Count
+        $batchSize = 500
+        for ($i = 0; $i -lt $numberOfAccounts; $i += $batchSize) {
+            $permission.AccountReferences = $sendOnBehalfUsers[$i..([Math]::Min($i + $batchSize - 1, $numberOfAccounts - 1))]
+            Write-Output $permission
+        }
     }
 }
 catch {
