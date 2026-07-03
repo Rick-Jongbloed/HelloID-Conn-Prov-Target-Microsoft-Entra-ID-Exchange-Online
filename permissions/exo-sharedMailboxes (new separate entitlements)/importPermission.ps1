@@ -1,5 +1,5 @@
 #####################################################
-# HelloID-Conn-Prov-Target-MS-Entra-ExO-Permissions-SharedMailboxes-Import
+# HelloID-Conn-Prov-Target-MS-Entra-ExO-Permissions-SharedMailbox-Import
 # Correlate accounts to shared mailbox permissions
 # PowerShell V2
 #####################################################

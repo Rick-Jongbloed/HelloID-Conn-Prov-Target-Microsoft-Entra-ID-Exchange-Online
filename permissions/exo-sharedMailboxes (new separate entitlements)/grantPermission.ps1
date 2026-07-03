@@ -1,5 +1,5 @@
 #####################################################
-# HelloID-Conn-Prov-Target-MS-Entra-ExO-Permissions-SharedMailboxes-Grant
+# HelloID-Conn-Prov-Target-MS-Entra-ExO-Permissions-SharedMailbox-Grant
 # Grant shared mailbox permission (full access, send as, send on behalf)
 # PowerShell V2
 #####################################################
@@ -383,7 +383,7 @@ try {
 
     $OutputContext.AuditLogs.Add(
         [PSCustomObject]@{
-            Message = "Grant permission [$($ActionContext.PermissionDisplayName)] was successful"
+            Message = "Grant permission [$($ActionContext.PermissionDisplayName)] with id [$($ActionContext.References.Permission.Id)] to account with account reference [$($ActionContext.References.Account)] was successful"
             IsError = $false
         }
     )
