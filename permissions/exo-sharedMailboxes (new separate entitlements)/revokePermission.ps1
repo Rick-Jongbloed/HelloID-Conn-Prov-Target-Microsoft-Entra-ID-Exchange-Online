@@ -1,5 +1,5 @@
 #####################################################
-# HelloID-Conn-Prov-Target-MS-Entra-ExO-Permissions-SharedMailboxes-Revoke
+# HelloID-Conn-Prov-Target-MS-Entra-ExO-Permissions-SharedMailbox-Revoke
 # Revoke shared mailbox permission (full access, send as, send on behalf)
 # PowerShell V2
 #####################################################
@@ -382,7 +382,7 @@ try {
 
     $OutputContext.AuditLogs.Add(
         [PSCustomObject]@{
-            Message = "Revoked permission [$($ActionContext.PermissionDisplayName)] with id [$($ActionContext.References.Permission.Id)] from account with AccountReference: $($ActionContext.References.Account)"
+            Message = "Revoke permission [$($ActionContext.PermissionDisplayName)] with id [$($ActionContext.References.Permission.Id)] from account with account reference [$($ActionContext.References.Account)] was successful"
             IsError = $false
         }
     )
@@ -396,7 +396,7 @@ catch {
         $errorObj = Resolve-MS-Entra-ExoError -ExceptionResponse $ex
 
         if ($errorObj.ErrorDetails.error.code -eq 'Request_ResourceNotFound' -and $errorObj.ErrorDetails.error.message -like "*$($ActionContext.References.Permission.Id)*") {
-            $auditMessage = "Skipped revoking permission [$($ActionContext.PermissionDisplayName)] with id [$($ActionContext.References.Permission.Id)] from account with AccountReference: $($ActionContext.References.Account | ConvertTo-Json). Reason: User is already no longer a member or the permission no longer exists."
+            $auditMessage = "Skipped revoking permission [$($ActionContext.PermissionDisplayName)] with id [$($ActionContext.References.Permission.Id)] from account with account reference [$($ActionContext.References.Account)]. Reason: User is already no longer a member or the permission no longer exists."
             $auditError = $false
             $OutputContext.Success = $true
         }

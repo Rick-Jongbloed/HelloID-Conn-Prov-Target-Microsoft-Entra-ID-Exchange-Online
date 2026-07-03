@@ -1,5 +1,5 @@
 #####################################################
-# HelloID-Conn-Prov-Target-MS-Entra-ExO-Permissions-Groups-List
+# HelloID-Conn-Prov-Target-MS-Entra-ExO-Permissions-ExoGroups-List
 # List Exchange Online groups as permissions
 # PowerShell V2
 #####################################################

@@ -1,5 +1,5 @@
 #####################################################
-# HelloID-Conn-Prov-Target-MS-Entra-ExO-Permissions-SharedMailboxes-List
+# HelloID-Conn-Prov-Target-MS-Entra-ExO-Permissions-SharedMailbox-List
 # List shared mailboxes as separate permissions
 # PowerShell V2
 #####################################################

@@ -1,5 +1,5 @@
 #####################################################
-# HelloID-Conn-Prov-Target-MS-Entra-ExO-Permissions-Groups-Revoke
+# HelloID-Conn-Prov-Target-MS-Entra-ExO-Permissions-ExoGroups-Revoke
 # Revoke Exchange Online group membership from account
 # PowerShell V2
 #####################################################
@@ -241,7 +241,7 @@ try {
 
     $OutputContext.AuditLogs.Add(
         [PSCustomObject]@{
-            Message = "Revoked permission [$($ActionContext.PermissionDisplayName)] with id [$($ActionContext.References.Permission.Id)] from account with AccountReference: $($ActionContext.References.Account)"
+            Message = "Revoke permission [$($ActionContext.PermissionDisplayName)] with id [$($ActionContext.References.Permission.Id)] from account with account reference [$($ActionContext.References.Account)] was successful"
             IsError = $false
         }
     )
@@ -255,7 +255,7 @@ catch {
         $errorObj = Resolve-MS-Entra-ExoError -ExceptionResponse $ex
 
         if ($errorObj.ErrorDetails.error.code -eq 'Request_ResourceNotFound' -or $errorObj.FriendlyMessage -like '*not found*') {
-            $auditMessage = "Skipped revoking permission [$($ActionContext.PermissionDisplayName)] with id [$($ActionContext.References.Permission.Id)] from account with AccountReference: $($ActionContext.References.Account | ConvertTo-Json). Reason: User is already no longer a member or the permission no longer exists."
+            $auditMessage = "Skipped revoking permission [$($ActionContext.PermissionDisplayName)] with id [$($ActionContext.References.Permission.Id)] from account with account reference [$($ActionContext.References.Account)]. Reason: User is already no longer a member or the permission no longer exists."
             $auditError = $false
             $OutputContext.Success = $true
         }
