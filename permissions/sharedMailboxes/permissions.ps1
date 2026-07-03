@@ -168,7 +168,7 @@ function Get-ExOSharedMailboxes {
         [int]$ResultSize = 500
     )
 
-    $Uri = "https://outlook.office365.com/adminapi/v2.0/$TenantID/Mailbox?`$select=Guid,DisplayName,PrimarySmtpAddress,RecipientTypeDetails"
+    $Uri = "https://outlook.office365.com/adminapi/v2.0/$TenantID/Mailbox?`$select=ExternalDirectoryObjectId,DisplayName,RecipientTypeDetails"
 
     do {
         $Body = @{
@@ -194,49 +194,12 @@ function Get-ExOSharedMailboxes {
         $Response = Invoke-RestMethod @Request
 
         $Response.Value |
-            Where-Object { $_.RecipientTypeDetails -eq 'SharedMailbox' -and -not [string]::IsNullOrEmpty($_.Guid) } |
-            Select-Object @{
-                Name       = 'Id'
-                Expression = { $_.Guid }
-            },
-            DisplayName,
-            PrimarySmtpAddress
+            Where-Object { $_.RecipientTypeDetails -eq 'SharedMailbox' -and -not [string]::IsNullOrEmpty($_.ExternalDirectoryObjectId) } |
+            Select-Object ExternalDirectoryObjectId, DisplayName
 
         $Uri = $Response.'@odata.nextLink'
 
     } while ($Uri)
-}
-
-function Add-HelloIDSharedMailboxPermissions {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory)]
-        [object]$SharedMailbox,
-
-        [Parameter(Mandatory)]
-        [object]$PermissionOutputContext
-    )
-
-    $displayName = "Shared Mailbox - $($SharedMailbox.DisplayName)"
-    $displayName = $displayName.substring(0, [System.Math]::Min(83, $displayName.Length))
-
-    foreach ($permission in @('FullAccess', 'SendAs', 'SendOnBehalf')) {
-        $permissionDisplayName = switch ($permission) {
-            'FullAccess'   { 'Full Access' }
-            'SendAs'       { 'Send As' }
-            'SendOnBehalf' { 'Send on Behalf' }
-        }
-
-        $null = $PermissionOutputContext.Permissions.Add(
-            @{
-                displayName    = "$displayName - $permissionDisplayName"
-                identification = @{
-                    Id         = $SharedMailbox.Id
-                    Permission = $permission
-                }
-            }
-        )
-    }
 }
 #endregion Functions
 
@@ -263,12 +226,44 @@ try {
 
     $actionMessage = 'retrieving shared mailboxes'
     Write-Information $actionMessage
-    $SharedMailboxes = Get-ExOSharedMailboxes -Authorization $ExOAuthorization -TenantID $ActionContext.Configuration.TenantID
-    Write-Information "Retrieved $(($SharedMailboxes | Measure-Object).Count) shared mailboxes."
+    $microsoftExchangeOnlineSharedMailboxes = Get-ExOSharedMailboxes -Authorization $ExOAuthorization -TenantID $ActionContext.Configuration.TenantID
+    Write-Information "Retrieved $(($microsoftExchangeOnlineSharedMailboxes | Measure-Object).Count) shared mailboxes."
 
-    $SharedMailboxes | ForEach-Object {
-        Add-HelloIDSharedMailboxPermissions -SharedMailbox $_ -PermissionOutputContext $outputContext
+    #region Send results to HelloID
+    $microsoftExchangeOnlineSharedMailboxes | ForEach-Object {
+        # Shorten DisplayName to max. 100 chars (83 because ' - Send on Behalf' is 17 char)
+        $displayName = "Shared Mailbox - $($_.DisplayName)"
+        $displayName = $displayName.substring(0, [System.Math]::Min(83, $displayName.Length))
+
+        $outputContext.Permissions.Add(
+            @{
+                displayName    = $displayName + ' - Full Access'
+                identification = @{
+                    Id         = $_.ExternalDirectoryObjectId
+                    Permission = "FullAccess"
+                }
+            }
+        )
+        $outputContext.Permissions.Add(
+            @{
+                displayName    = $displayName + ' - Send As'
+                identification = @{
+                    Id         = $_.ExternalDirectoryObjectId
+                    Permission = "SendAs"
+                }
+            }
+        )
+        $outputContext.Permissions.Add(
+            @{
+                displayName    = $displayName + ' - Send on Behalf'
+                identification = @{
+                    Id         = $_.ExternalDirectoryObjectId
+                    Permission = "SendOnBehalf"
+                }
+            }
+        )
     }
+    #endregion Send results to HelloID
 }
 catch {
     $ex = $PSItem

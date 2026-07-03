@@ -124,7 +124,7 @@ function Get-ExOSharedMailboxes {
         [int]$ResultSize = 500
     )
 
-    $Uri = "https://outlook.office365.com/adminapi/v2.0/$TenantID/Mailbox?`$select=Guid,DisplayName,UserPrincipalName,RecipientTypeDetails,GrantSendOnBehalfTo,Identity"
+    $Uri = "https://outlook.office365.com/adminapi/v2.0/$TenantID/Mailbox?`$select=ExternalDirectoryObjectId,DisplayName,UserPrincipalName,RecipientTypeDetails,GrantSendOnBehalfTo,Identity"
 
     do {
         $Body = @{
@@ -150,7 +150,7 @@ function Get-ExOSharedMailboxes {
 
         $Response.Value |
             Where-Object RecipientTypeDetails -eq 'SharedMailbox' |
-            Select-Object Guid,
+            Select-Object ExternalDirectoryObjectId,
             DisplayName,
             UserPrincipalName,
             GrantSendOnBehalfTo,
@@ -424,7 +424,7 @@ try {
 
         $permission = @{
             PermissionReference = @{
-                Id         = $SharedMailbox.Guid
+                Id         = $SharedMailbox.ExternalDirectoryObjectId
                 Permission = 'FullAccess'
             }
             Description = $SharedMailbox.UserPrincipalName
@@ -451,7 +451,7 @@ try {
 
         $permission = @{
             PermissionReference = @{
-                Id         = $SharedMailbox.Guid
+                Id         = $SharedMailbox.ExternalDirectoryObjectId
                 Permission = 'SendAs'
             }
             Description = $SharedMailbox.UserPrincipalName
@@ -487,7 +487,7 @@ try {
 
         $permission = @{
             PermissionReference = @{
-                Id         = $SharedMailbox.Guid
+                Id         = $SharedMailbox.ExternalDirectoryObjectId
                 Permission = 'SendOnBehalf'
             }
             Description = $SharedMailbox.UserPrincipalName
