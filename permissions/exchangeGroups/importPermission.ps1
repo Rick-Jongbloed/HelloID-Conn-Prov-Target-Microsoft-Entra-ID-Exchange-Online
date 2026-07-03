@@ -1,5 +1,5 @@
 #####################################################
-# HelloID-Conn-Prov-Target-MS-Entra-ExO-Permissions-ExoGroups-Import
+# HelloID-Conn-Prov-Target-MS-Entra-ExO-Permissions-ExchangeGroups-Import
 # Correlate accounts to Exchange Online group permissions
 # PowerShell V2
 #####################################################
