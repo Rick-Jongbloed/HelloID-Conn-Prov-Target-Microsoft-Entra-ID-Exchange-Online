@@ -1,11 +1,11 @@
 #####################################################
-# HelloID-Conn-Prov-Target-MS-Entra-ExO-Permissions-ExoGroups-Revoke
+# HelloID-Conn-Prov-Target-MS-Entra-ExO-Permissions-ExchangeGroups-Revoke
 # Revoke Exchange Online group membership from account
 # PowerShell V2
 #####################################################
 
 # Enable TLS1.2
-exo-sharedMailboxes (new separate entitlements)[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
+[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
 
 #region Functions
 function Get-MSEntraCertificate {

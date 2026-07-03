@@ -1,5 +1,5 @@
 #####################################################
-# HelloID-Conn-Prov-Target-MS-Entra-ExO-Permissions-ExoGroups-Grant
+# HelloID-Conn-Prov-Target-MS-Entra-ExO-Permissions-ExchangeGroups-Grant
 # Grant Exchange Online group membership to account
 # PowerShell V2
 #####################################################
