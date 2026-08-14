@@ -164,6 +164,150 @@ function Resolve-MS-Entra-ExoError {
     }
 }
 
+function Assert-ExOCommandResponse {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [object]$Response,
+
+        [Parameter(Mandatory)]
+        [string]$Operation
+    )
+
+    $errors = @()
+
+    if ($null -eq $Response) {
+        return
+    }
+
+    if ($null -ne $Response.error) {
+        $errors += ($Response.error | ConvertTo-Json -Depth 10 -Compress)
+    }
+
+    if ($null -ne $Response.Errors) {
+        $errors += ($Response.Errors | ConvertTo-Json -Depth 10 -Compress)
+    }
+
+    if ($null -ne $Response.ErrorRecords) {
+        $errors += ($Response.ErrorRecords | ConvertTo-Json -Depth 10 -Compress)
+    }
+
+    if ($null -ne $Response.Value) {
+        foreach ($valueItem in @($Response.Value)) {
+            if ($null -ne $valueItem.Error) {
+                $errors += ($valueItem.Error | ConvertTo-Json -Depth 10 -Compress)
+            }
+
+            if ($null -ne $valueItem.Exception) {
+                $errors += ($valueItem.Exception | ConvertTo-Json -Depth 10 -Compress)
+            }
+
+            if ($null -ne $valueItem.Errors) {
+                $errors += ($valueItem.Errors | ConvertTo-Json -Depth 10 -Compress)
+            }
+        }
+    }
+
+    if ($errors.Count -gt 0) {
+        throw "Exchange Admin API returned one or more errors for [$Operation]: $($errors -join ' | ')"
+    }
+}
+
+function New-ExORequestHeaders {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [hashtable]$BaseHeaders
+    )
+
+    $headers = @{}
+    foreach ($key in $BaseHeaders.Keys) {
+        $headers[$key] = $BaseHeaders[$key]
+    }
+
+    # Keep writes/reads on the same backend where possible and make calls traceable.
+    $headers['X-PreferServerAffinity'] = 'true'
+    $headers['X-ResponseFormat'] = 'json'
+    $headers['return-client-request-id'] = 'true'
+    $headers['client-request-id'] = [guid]::NewGuid().ToString()
+
+    Write-Output $headers
+}
+
+function Get-ExOMailboxPermissions {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [hashtable]$Authorization,
+
+        [Parameter(Mandatory)]
+        [string]$TenantID,
+
+        [Parameter(Mandatory)]
+        [string]$Mailbox
+    )
+
+    $Body = @{
+        CmdletInput = @{
+            CmdletName = 'Get-MailboxPermission'
+            Parameters = @{
+                Identity   = $Mailbox
+                ResultSize = 'Unlimited'
+            }
+        }
+    }
+
+    $Request = @{
+        Uri         = "https://outlook.office365.com/adminapi/beta/$TenantID/InvokeCommand?`$select=User,AccessRights"
+        Method      = 'Post'
+        Headers     = New-ExORequestHeaders -BaseHeaders $Authorization
+        ContentType = 'application/json'
+        Body        = [System.Text.Encoding]::UTF8.GetBytes(
+            (ConvertTo-Json $Body -Depth 10 -Compress)
+        )
+    }
+
+    $Response = Invoke-RestMethod @Request
+    @($Response.Value)
+}
+
+function Get-ExORecipientPermissions {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [hashtable]$Authorization,
+
+        [Parameter(Mandatory)]
+        [string]$TenantID,
+
+        [Parameter(Mandatory)]
+        [string]$Mailbox
+    )
+
+    $Body = @{
+        CmdletInput = @{
+            CmdletName = 'Get-RecipientPermission'
+            Parameters = @{
+                Identity   = $Mailbox
+                ResultSize = 'Unlimited'
+            }
+        }
+    }
+
+    $Request = @{
+        Uri         = "https://outlook.office365.com/adminapi/beta/$TenantID/InvokeCommand?`$select=Trustee,AccessRights"
+        Method      = 'Post'
+        Headers     = New-ExORequestHeaders -BaseHeaders $Authorization
+        ContentType = 'application/json'
+        Body        = [System.Text.Encoding]::UTF8.GetBytes(
+            (ConvertTo-Json $Body -Depth 10 -Compress)
+        )
+    }
+
+    $Response = Invoke-RestMethod @Request
+    @($Response.Value)
+}
+
 function Add-ExOMailboxPermission {
     [CmdletBinding()]
     param(
@@ -203,7 +347,7 @@ function Add-ExOMailboxPermission {
     $Request = @{
         Uri         = "https://outlook.office365.com/adminapi/beta/$TenantID/InvokeCommand"
         Method      = 'Post'
-        Headers     = $Authorization
+        Headers     = New-ExORequestHeaders -BaseHeaders $Authorization
         ContentType = 'application/json'
         Body        = [System.Text.Encoding]::UTF8.GetBytes(
             (ConvertTo-Json $Body -Depth 10 -Compress)
@@ -248,7 +392,7 @@ function Add-ExORecipientPermission {
     $Request = @{
         Uri         = "https://outlook.office365.com/adminapi/beta/$TenantID/InvokeCommand"
         Method      = 'Post'
-        Headers     = $Authorization
+        Headers     = New-ExORequestHeaders -BaseHeaders $Authorization
         ContentType = 'application/json'
         Body        = [System.Text.Encoding]::UTF8.GetBytes(
             (ConvertTo-Json $Body -Depth 10 -Compress)
@@ -273,7 +417,7 @@ function Set-ExOMailboxGrantSendOnBehalfV2 {
         [string]$Identity,
 
         [Parameter(Mandatory)]
-        [string]$GrantSendOnBehalfTo
+        [string[]]$GrantSendOnBehalfTo
     )
 
     $Body = @{
@@ -292,7 +436,7 @@ function Set-ExOMailboxGrantSendOnBehalfV2 {
     $Request = @{
         Uri         = "https://outlook.office365.com/adminapi/v2.0/$TenantID/Mailbox"
         Method      = 'Post'
-        Headers     = $Authorization
+        Headers     = New-ExORequestHeaders -BaseHeaders $Authorization
         ContentType = 'application/json'
         Body        = [System.Text.Encoding]::UTF8.GetBytes(
             (ConvertTo-Json $Body -Depth 10 -Compress)
@@ -308,11 +452,14 @@ function Set-ExOMailboxGrantSendOnBehalfV2 {
 #region script
 try {
     $actionMessage = 'validating account reference'
+    $accountReference = [string]$ActionContext.References.Account
 
     # Verify account reference
-    if ([string]::IsNullOrEmpty($ActionContext.References.Account)) {
+    if ([string]::IsNullOrWhiteSpace($accountReference)) {
         throw "The account reference could not be found"
     }
+
+    $accountReference = $accountReference.Trim()
 
     $actionMessage = 'authenticating to the Exchange Admin API'
     $certificate = Get-MSEntraCertificate
@@ -337,43 +484,45 @@ try {
         $ExOAuthorization['X-AnchorMailbox'] = "APP:SystemMailbox{bb558c35-97f1-4cb9-8ff7-d53741dc928c}@$($anchorMailboxDomain.TrimStart('@').Trim())"
     }
 
-    $actionMessage = "granting permission [$($ActionContext.References.Permission.Permission)] on shared mailbox [$($ActionContext.References.Permission.Id)] to account [$($ActionContext.References.Account)]"
+    $actionMessage = "granting permission [$($ActionContext.References.Permission.Permission)] on shared mailbox [$($ActionContext.References.Permission.Id)] to account [$accountReference]"
+
+    $grantResponse = $null
 
     switch ($ActionContext.References.Permission.Permission) {
         'FullAccess' {
             if ($ActionContext.DryRun -eq $false) {
-                [void](Add-ExOMailboxPermission -Authorization $ExOAuthorization `
+                $grantResponse = Add-ExOMailboxPermission -Authorization $ExOAuthorization `
                     -TenantID $ActionContext.Configuration.TenantID `
                     -Identity $ActionContext.References.Permission.Id `
-                    -User $ActionContext.References.Account `
+                    -User $accountReference `
                     -AccessRights 'FullAccess' `
-                    -InheritanceType 'All')
+                    -InheritanceType 'All'
             }
             else {
-                Write-Information "DryRun: Would grant FullAccess on $($ActionContext.References.Permission.Id) to $($ActionContext.References.Account)"
+                Write-Information "DryRun: Would grant FullAccess on $($ActionContext.References.Permission.Id) to $accountReference"
             }
         }
         'SendAs' {
             if ($ActionContext.DryRun -eq $false) {
-                [void](Add-ExORecipientPermission -Authorization $ExOAuthorization `
+                $grantResponse = Add-ExORecipientPermission -Authorization $ExOAuthorization `
                     -TenantID $ActionContext.Configuration.TenantID `
                     -Identity $ActionContext.References.Permission.Id `
-                    -Trustee $ActionContext.References.Account `
-                    -AccessRights 'SendAs')
+                    -Trustee $accountReference `
+                    -AccessRights 'SendAs'
             }
             else {
-                Write-Information "DryRun: Would grant SendAs on $($ActionContext.References.Permission.Id) to $($ActionContext.References.Account)"
+                Write-Information "DryRun: Would grant SendAs on $($ActionContext.References.Permission.Id) to $accountReference"
             }
         }
         'SendOnBehalf' {
             if ($ActionContext.DryRun -eq $false) {
-                [void](Set-ExOMailboxGrantSendOnBehalfV2 -Authorization $ExOAuthorization `
+                $grantResponse = Set-ExOMailboxGrantSendOnBehalfV2 -Authorization $ExOAuthorization `
                     -TenantID $ActionContext.Configuration.TenantID `
                     -Identity $ActionContext.References.Permission.Id `
-                    -GrantSendOnBehalfTo $ActionContext.References.Account)
+                    -GrantSendOnBehalfTo @($accountReference)
             }
             else {
-                Write-Information "DryRun: Would grant SendOnBehalf on $($ActionContext.References.Permission.Id) to $($ActionContext.References.Account)"
+                Write-Information "DryRun: Would grant SendOnBehalf on $($ActionContext.References.Permission.Id) to $accountReference"
             }
         }
         default {
@@ -381,9 +530,14 @@ try {
         }
     }
 
+    if ($ActionContext.DryRun -eq $false) {
+        Assert-ExOCommandResponse -Response $grantResponse -Operation $actionMessage
+        Write-Information ("Exchange Admin API response for operation [{0}]: {1}" -f $actionMessage, ($grantResponse | ConvertTo-Json -Depth 10 -Compress))
+    }
+
     $OutputContext.AuditLogs.Add(
         [PSCustomObject]@{
-            Message = "Grant permission [$($ActionContext.PermissionDisplayName)] with id [$($ActionContext.References.Permission.Id)] to account with account reference [$($ActionContext.References.Account)] was successful"
+            Message = "Grant permission [$($ActionContext.PermissionDisplayName)] with id [$($ActionContext.References.Permission.Id)] to account with account reference [$accountReference] was successful"
             IsError = $false
         }
     )
