@@ -353,11 +353,9 @@ try {
 
     $tenantId = $ActionContext.Configuration.TenantID
 
-    if ([string]::IsNullOrEmpty($ActionContext.Configuration.Organization)) {
-        throw 'Organization field is required but is not configured'
-    }
-
-    $ExOAuthorization['X-AnchorMailbox'] = "APP:SystemMailbox{bb558c35-97f1-4cb9-8ff7-d53741dc928c}@$($ActionContext.Configuration.Organization)"
+    # Use the same routing hint for every request, so all calls (including verification) are routed to the same backend.
+    # Format per Microsoft docs: APP:SystemMailbox{bb558c35-97f1-4cb9-8ff7-d53741dc928c}@<tenantIdOrOrganization>
+    $ExOAuthorization['X-AnchorMailbox'] = "APP:SystemMailbox{bb558c35-97f1-4cb9-8ff7-d53741dc928c}@$($ActionContext.Configuration.TenantID)"
 
     $actionMessage = 'retrieving shared mailboxes'
     Write-Information $actionMessage

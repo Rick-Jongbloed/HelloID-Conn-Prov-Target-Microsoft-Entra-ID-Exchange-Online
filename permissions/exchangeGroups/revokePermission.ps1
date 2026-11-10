@@ -217,15 +217,9 @@ try {
 
     Write-Information 'Successfully authenticated the Exchange Admin API'
 
-    $anchorMailboxDomain = $ActionContext.Configuration.Organization
-    if (-not [String]::IsNullOrEmpty($anchorMailboxDomain)) {
-        if ($anchorMailboxDomain -notlike '*onmicrosoft.com') {
-            $Domain = $anchorMailboxDomain -split '.' | Select-Object -First 1
-            $anchorMailboxDomain = "$($Domain).onmicrosoft.com"
-        }
-
-        $ExOAuthorization['X-AnchorMailbox'] = "APP:SystemMailbox{bb558c35-97f1-4cb9-8ff7-d53741dc928c}@$($anchorMailboxDomain.TrimStart('@').Trim())"
-    }
+    # Use the same routing hint for every request, so all calls (including verification) are routed to the same backend.
+    # Format per Microsoft docs: APP:SystemMailbox{bb558c35-97f1-4cb9-8ff7-d53741dc928c}@<tenantIdOrOrganization>
+    $ExOAuthorization['X-AnchorMailbox'] = "APP:SystemMailbox{bb558c35-97f1-4cb9-8ff7-d53741dc928c}@$($ActionContext.Configuration.TenantID)"
 
     $actionMessage = "revoking Exchange Online group [$($ActionContext.PermissionDisplayName)] with id [$($ActionContext.References.Permission.Id)] from account [$($ActionContext.References.Account)]"
 
