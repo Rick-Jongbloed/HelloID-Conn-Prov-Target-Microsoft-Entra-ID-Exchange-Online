@@ -211,79 +211,168 @@ function Get-ExOUserMailboxes {
     } while ($Uri)
 }
 
-function Get-ExOMailboxPermissions {
+function New-ExORequestHeaders {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
-        [hashtable]$Authorization,
-
-        [Parameter(Mandatory)]
-        [string]$TenantID,
-
-        [Parameter(Mandatory)]
-        [string]$Mailbox
+        [hashtable]$BaseHeaders
     )
 
-    $Body = @{
-        CmdletInput = @{
-            CmdletName = 'Get-MailboxPermission'
-            Parameters = @{
-                Identity   = $Mailbox
-                ResultSize = 'Unlimited'
-            }
-        }
+    $headers = @{}
+    foreach ($key in $BaseHeaders.Keys) {
+        $headers[$key] = $BaseHeaders[$key]
     }
 
-    $Request = @{
-        Uri         = "https://outlook.office365.com/adminapi/beta/$TenantID/InvokeCommand?`$select=User,AccessRights"
-        Method      = 'Post'
-        Headers     = $Authorization
-        ContentType = 'application/json'
-        Body        = [System.Text.Encoding]::UTF8.GetBytes(
-            (ConvertTo-Json $Body -Depth 10 -Compress)
-        )
-    }
+    # A unique id per request makes calls traceable in Exchange Online (and in support cases with Microsoft)
+    $headers['X-ResponseFormat'] = 'json'
+    $headers['return-client-request-id'] = 'true'
+    $headers['client-request-id'] = [guid]::NewGuid().ToString()
 
-    $Response = Invoke-RestMethod @Request
-    $Response.Value
+    Write-Output $headers
 }
 
-function Get-ExORecipientPermissions {
+function Invoke-ExOBatchRequest {
+    <#
+        Executes a list of Exchange cmdlets against the Exchange Admin API $batch endpoint, instead of one request per item
+        (same approach as Invoke-MSEntraBatchRequest for Microsoft Graph in this connector).
+        Each request is a hashtable with 'CmdletName', 'Parameters' and optionally 'Select' (properties for $select).
+        Returns a hashtable keyed by the (0-based) index of $Requests, where each value is the 'value' array of that response.
+        Sub-requests that fail with 429 or 5xx are retried. A sub-request for an object that no longer exists returns an
+        empty result. Any other failure stops the import, so HelloID never receives an incomplete import.
+    #>
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
-        [hashtable]$Authorization,
+        [AllowEmptyCollection()]
+        [array]
+        $Requests,
 
         [Parameter(Mandatory)]
-        [string]$TenantID,
+        [hashtable]
+        $Authorization,
 
         [Parameter(Mandatory)]
-        [string]$Mailbox
+        [string]
+        $TenantID,
+
+        [int]
+        $BatchSize = 10,
+
+        [int]
+        $MaxRetries = 3
     )
 
-    $Body = @{
-        CmdletInput = @{
-            CmdletName = 'Get-RecipientPermission'
-            Parameters = @{
-                Identity   = $Mailbox
-                ResultSize = 'Unlimited'
+    $resultsByIndex = @{}
+    [int[]]$pendingIndexes = @(if ($Requests.Count -gt 0) { 0..($Requests.Count - 1) })
+
+    for ($attempt = 0; $pendingIndexes.Count -gt 0; $attempt++) {
+        if ($attempt -gt 0) {
+            if ($attempt -gt $MaxRetries) {
+                throw "$($pendingIndexes.Count) batch sub-request(s) still failed after $($MaxRetries) retries"
             }
+
+            $delaySeconds = [int](2 * [System.Math]::Pow(2, $attempt - 1))
+            Write-Warning "Retrying $($pendingIndexes.Count) failed batch sub-request(s) in $($delaySeconds) seconds (retry $($attempt) of $($MaxRetries))"
+            Start-Sleep -Seconds $delaySeconds
         }
+
+        $retryIndexes = [System.Collections.Generic.List[int]]::new()
+
+        for ($i = 0; $i -lt $pendingIndexes.Count; $i += $BatchSize) {
+            $batchIndexes = @($pendingIndexes[$i..[System.Math]::Min($i + $BatchSize - 1, $pendingIndexes.Count - 1)])
+
+            $batchRequests = [System.Collections.Generic.List[object]]::new()
+            foreach ($index in $batchIndexes) {
+                $request = $Requests[$index]
+                $url = "https://outlook.office365.com/adminapi/beta/$TenantID/InvokeCommand"
+                if (-not [string]::IsNullOrEmpty($request.Select)) {
+                    $url = "$($url)?`$select=$($request.Select)"
+                }
+
+                # Without ErrorAction Stop, cmdlet errors are returned inside an HTTP 200 response in '@adminapi.errors'
+                $parameters = $request.Parameters.Clone()
+                $parameters['ErrorAction'] = 'Stop'
+
+                [void]$batchRequests.Add(
+                    @{
+                        id      = "$index"
+                        method  = 'POST'
+                        url     = $url
+                        headers = @{ 'Content-Type' = 'application/json' }
+                        body    = @{
+                            CmdletInput = @{
+                                CmdletName = $request.CmdletName
+                                Parameters = $parameters
+                            }
+                        }
+                    }
+                )
+            }
+
+            $headers = New-ExORequestHeaders -BaseHeaders $Authorization
+            $batchSplatParams = @{
+                Uri         = "https://outlook.office365.com/adminapi/beta/$TenantID/`$batch"
+                Method      = 'Post'
+                Headers     = $headers
+                ContentType = 'application/json'
+                Body        = [System.Text.Encoding]::UTF8.GetBytes(
+                    (ConvertTo-Json @{ requests = $batchRequests } -Depth 10 -Compress)
+                )
+                TimeoutSec  = 120
+            }
+
+            try {
+                $batchResponse = Invoke-RestMethod @batchSplatParams
+            }
+            catch {
+                $statusCode = $null
+                if ($null -ne $_.Exception.Response) {
+                    $statusCode = [int]$_.Exception.Response.StatusCode
+                }
+
+                # Throttling, server errors and timeouts: retry the whole batch
+                if ($statusCode -eq 429 -or $statusCode -ge 500 -or $_.Exception -is [System.Threading.Tasks.TaskCanceledException]) {
+                    Write-Warning "Batch request failed (client-request-id $($headers['client-request-id'])): $($_.Exception.Message)"
+                    $batchIndexes | ForEach-Object { $retryIndexes.Add($_) }
+                    continue
+                }
+                throw
+            }
+
+            $answeredIndexes = [System.Collections.Generic.List[int]]::new()
+            foreach ($response in @($batchResponse.responses)) {
+                $index = [int]$response.id
+                $answeredIndexes.Add($index)
+                $status = [int]$response.status
+                $errorText = "$($response.body.error.message) $($response.body.error.innererror.internalexception.message) $($response.body.'@adminapi.errors' -join ' | ')".Trim()
+                $request = $Requests[$index]
+
+                if ($status -ge 200 -and $status -lt 300 -and -not $response.body.'@adminapi.errors') {
+                    $resultsByIndex[$index] = @($response.body.value)
+                }
+                elseif ($status -eq 429 -or $status -ge 500) {
+                    $retryIndexes.Add($index)
+                }
+                elseif ($status -eq 404 -or $errorText -match 'ManagementObjectNotFoundException|couldn''t be found') {
+                    # The object was removed between retrieving the list and retrieving its permissions or members
+                    Write-Warning "$($request.CmdletName) for [$($request.Parameters.Identity)]: object no longer exists, no results"
+                    $resultsByIndex[$index] = @()
+                }
+                else {
+                    throw "$($request.CmdletName) for [$($request.Parameters.Identity)] failed with status [$($status)] (client-request-id $($headers['client-request-id'])): $($errorText)"
+                }
+            }
+
+            # A sub-request without a response is retried as well
+            $batchIndexes | Where-Object { $_ -notin $answeredIndexes } | ForEach-Object { $retryIndexes.Add($_) }
+        }
+
+        $pendingIndexes = @($retryIndexes)
     }
 
-    $Request = @{
-        Uri         = "https://outlook.office365.com/adminapi/beta/$TenantID/InvokeCommand?`$select=Trustee,AccessRights"
-        Method      = 'Post'
-        Headers     = $Authorization
-        ContentType = 'application/json'
-        Body        = [System.Text.Encoding]::UTF8.GetBytes(
-            (ConvertTo-Json $Body -Depth 10 -Compress)
-        )
-    }
-
-    $Response = Invoke-RestMethod @Request
-    $Response.Value
+    Write-Output $resultsByIndex
 }
+
 
 function Resolve-MS-Entra-ExoError {
     [CmdletBinding()]
@@ -362,43 +451,44 @@ try {
     $SharedMailboxes = Get-ExOSharedMailboxes -Authorization $ExOAuthorization -TenantID $tenantId
     Write-Information "Retrieved $(($SharedMailboxes | Measure-Object).Count) shared mailboxes."
 
-    $actionMessage = 'retrieving mailbox permissions'
+    $SharedMailboxes = @($SharedMailboxes | Where-Object { $null -ne $_ })
+
+    # Full Access and Send As for all shared mailboxes via $batch (2 requests per shared mailbox, 10 per batch call)
+    $actionMessage = 'retrieving mailbox permissions (Full Access) and recipient permissions (Send As)'
     Write-Information $actionMessage
+    $permissionRequests = [System.Collections.Generic.List[object]]::new()
+    foreach ($SharedMailbox in $SharedMailboxes) {
+        $permissionRequests.Add(@{
+                CmdletName = 'Get-MailboxPermission'
+                Parameters = @{ Identity = $SharedMailbox.Identity; ResultSize = 'Unlimited' }
+                Select     = 'User,AccessRights,Deny,IsInherited'
+            })
+        $permissionRequests.Add(@{
+                CmdletName = 'Get-RecipientPermission'
+                Parameters = @{ Identity = $SharedMailbox.Identity; ResultSize = 'Unlimited' }
+                Select     = 'Trustee,AccessRights,AccessControlType,IsInherited'
+            })
+    }
+
+    $permissionResults = Invoke-ExOBatchRequest -Requests $permissionRequests -Authorization $ExOAuthorization -TenantID $tenantId
+
+    # Only explicit (not inherited, not denied) permissions of real accounts
     $MailboxPermissions = @{}
     $RecipientPermissions = @{}
-    foreach ($SharedMailbox in $SharedMailboxes) {
-        try {
-            $permissions = Get-ExOMailboxPermissions -Authorization $ExOAuthorization -TenantID $tenantId -Mailbox $SharedMailbox.Identity
-            $permissions = $permissions | Where-Object {
-                $_.User -notin @(
-                    'NT AUTHORITY\SELF'
-                    'NULL SID'
-                )
-            }
-            if ($permissions) {
-                $MailboxPermissions[$SharedMailbox.Identity] = @($permissions)
-            }
-        }
-        catch {
-            Write-Warning "Failed to retrieve mailbox permissions for $($SharedMailbox.Identity): $($_.Exception.Message)"
-        }
-
-        try {
-            $permissions = Get-ExORecipientPermissions -Authorization $ExOAuthorization -TenantID $tenantId -Mailbox $SharedMailbox.Identity
-            $permissions = $permissions | Where-Object {
-                $_.Trustee -notin @(
-                    'NT AUTHORITY\SELF'
-                    'NULL SID'
-                )
-            }
-            if ($permissions) {
-                $RecipientPermissions[$SharedMailbox.Identity] = @($permissions)
-            }
-        }
-        catch {
-            Write-Warning "Failed to retrieve recipient permissions for $($SharedMailbox.Identity): $($_.Exception.Message)"
-        }
+    for ($i = 0; $i -lt $SharedMailboxes.Count; $i++) {
+        $SharedMailbox = $SharedMailboxes[$i]
+        $MailboxPermissions[$SharedMailbox.Identity] = @($permissionResults[2 * $i] | Where-Object {
+                $_.User -notin @('NT AUTHORITY\SELF', 'NULL SID') -and
+                "$($_.Deny)" -ne 'True' -and
+                "$($_.IsInherited)" -ne 'True'
+            })
+        $RecipientPermissions[$SharedMailbox.Identity] = @($permissionResults[2 * $i + 1] | Where-Object {
+                $_.Trustee -notin @('NT AUTHORITY\SELF', 'NULL SID') -and
+                "$($_.AccessControlType)" -notin @('Deny', '1') -and
+                "$($_.IsInherited)" -ne 'True'
+            })
     }
+    Write-Information "Retrieved permissions of $($SharedMailboxes.Count) shared mailboxes with $([System.Math]::Ceiling($permissionRequests.Count / 10)) batch call(s)."
 
     $actionMessage = 'retrieving user mailboxes'
     Write-Information $actionMessage

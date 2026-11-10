@@ -137,43 +137,166 @@ function Get-ExODistributionGroups {
         Select-Object Guid, DisplayName, RecipientTypeDetails, Description
 }
 
-function Get-ExODistributionGroupMembers {
+function New-ExORequestHeaders {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
-        [hashtable]$Authorization,
-
-        [Parameter(Mandatory)]
-        [string]$TenantID,
-
-        [Parameter(Mandatory)]
-        [string]$Identity
+        [hashtable]$BaseHeaders
     )
 
-    $Body = @{
-        CmdletInput = @{
-            CmdletName = 'Get-DistributionGroupMember'
-            Parameters = @{
-                Identity   = $Identity
-                ResultSize = 'Unlimited'
+    $headers = @{}
+    foreach ($key in $BaseHeaders.Keys) {
+        $headers[$key] = $BaseHeaders[$key]
+    }
+
+    # A unique id per request makes calls traceable in Exchange Online (and in support cases with Microsoft)
+    $headers['X-ResponseFormat'] = 'json'
+    $headers['return-client-request-id'] = 'true'
+    $headers['client-request-id'] = [guid]::NewGuid().ToString()
+
+    Write-Output $headers
+}
+
+function Invoke-ExOBatchRequest {
+    <#
+        Executes a list of Exchange cmdlets against the Exchange Admin API $batch endpoint, instead of one request per item
+        (same approach as Invoke-MSEntraBatchRequest for Microsoft Graph in this connector).
+        Each request is a hashtable with 'CmdletName', 'Parameters' and optionally 'Select' (properties for $select).
+        Returns a hashtable keyed by the (0-based) index of $Requests, where each value is the 'value' array of that response.
+        Sub-requests that fail with 429 or 5xx are retried. A sub-request for an object that no longer exists returns an
+        empty result. Any other failure stops the import, so HelloID never receives an incomplete import.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyCollection()]
+        [array]
+        $Requests,
+
+        [Parameter(Mandatory)]
+        [hashtable]
+        $Authorization,
+
+        [Parameter(Mandatory)]
+        [string]
+        $TenantID,
+
+        [int]
+        $BatchSize = 10,
+
+        [int]
+        $MaxRetries = 3
+    )
+
+    $resultsByIndex = @{}
+    [int[]]$pendingIndexes = @(if ($Requests.Count -gt 0) { 0..($Requests.Count - 1) })
+
+    for ($attempt = 0; $pendingIndexes.Count -gt 0; $attempt++) {
+        if ($attempt -gt 0) {
+            if ($attempt -gt $MaxRetries) {
+                throw "$($pendingIndexes.Count) batch sub-request(s) still failed after $($MaxRetries) retries"
             }
+
+            $delaySeconds = [int](2 * [System.Math]::Pow(2, $attempt - 1))
+            Write-Warning "Retrying $($pendingIndexes.Count) failed batch sub-request(s) in $($delaySeconds) seconds (retry $($attempt) of $($MaxRetries))"
+            Start-Sleep -Seconds $delaySeconds
         }
+
+        $retryIndexes = [System.Collections.Generic.List[int]]::new()
+
+        for ($i = 0; $i -lt $pendingIndexes.Count; $i += $BatchSize) {
+            $batchIndexes = @($pendingIndexes[$i..[System.Math]::Min($i + $BatchSize - 1, $pendingIndexes.Count - 1)])
+
+            $batchRequests = [System.Collections.Generic.List[object]]::new()
+            foreach ($index in $batchIndexes) {
+                $request = $Requests[$index]
+                $url = "https://outlook.office365.com/adminapi/beta/$TenantID/InvokeCommand"
+                if (-not [string]::IsNullOrEmpty($request.Select)) {
+                    $url = "$($url)?`$select=$($request.Select)"
+                }
+
+                # Without ErrorAction Stop, cmdlet errors are returned inside an HTTP 200 response in '@adminapi.errors'
+                $parameters = $request.Parameters.Clone()
+                $parameters['ErrorAction'] = 'Stop'
+
+                [void]$batchRequests.Add(
+                    @{
+                        id      = "$index"
+                        method  = 'POST'
+                        url     = $url
+                        headers = @{ 'Content-Type' = 'application/json' }
+                        body    = @{
+                            CmdletInput = @{
+                                CmdletName = $request.CmdletName
+                                Parameters = $parameters
+                            }
+                        }
+                    }
+                )
+            }
+
+            $headers = New-ExORequestHeaders -BaseHeaders $Authorization
+            $batchSplatParams = @{
+                Uri         = "https://outlook.office365.com/adminapi/beta/$TenantID/`$batch"
+                Method      = 'Post'
+                Headers     = $headers
+                ContentType = 'application/json'
+                Body        = [System.Text.Encoding]::UTF8.GetBytes(
+                    (ConvertTo-Json @{ requests = $batchRequests } -Depth 10 -Compress)
+                )
+                TimeoutSec  = 120
+            }
+
+            try {
+                $batchResponse = Invoke-RestMethod @batchSplatParams
+            }
+            catch {
+                $statusCode = $null
+                if ($null -ne $_.Exception.Response) {
+                    $statusCode = [int]$_.Exception.Response.StatusCode
+                }
+
+                # Throttling, server errors and timeouts: retry the whole batch
+                if ($statusCode -eq 429 -or $statusCode -ge 500 -or $_.Exception -is [System.Threading.Tasks.TaskCanceledException]) {
+                    Write-Warning "Batch request failed (client-request-id $($headers['client-request-id'])): $($_.Exception.Message)"
+                    $batchIndexes | ForEach-Object { $retryIndexes.Add($_) }
+                    continue
+                }
+                throw
+            }
+
+            $answeredIndexes = [System.Collections.Generic.List[int]]::new()
+            foreach ($response in @($batchResponse.responses)) {
+                $index = [int]$response.id
+                $answeredIndexes.Add($index)
+                $status = [int]$response.status
+                $errorText = "$($response.body.error.message) $($response.body.error.innererror.internalexception.message) $($response.body.'@adminapi.errors' -join ' | ')".Trim()
+                $request = $Requests[$index]
+
+                if ($status -ge 200 -and $status -lt 300 -and -not $response.body.'@adminapi.errors') {
+                    $resultsByIndex[$index] = @($response.body.value)
+                }
+                elseif ($status -eq 429 -or $status -ge 500) {
+                    $retryIndexes.Add($index)
+                }
+                elseif ($status -eq 404 -or $errorText -match 'ManagementObjectNotFoundException|couldn''t be found') {
+                    # The object was removed between retrieving the list and retrieving its permissions or members
+                    Write-Warning "$($request.CmdletName) for [$($request.Parameters.Identity)]: object no longer exists, no results"
+                    $resultsByIndex[$index] = @()
+                }
+                else {
+                    throw "$($request.CmdletName) for [$($request.Parameters.Identity)] failed with status [$($status)] (client-request-id $($headers['client-request-id'])): $($errorText)"
+                }
+            }
+
+            # A sub-request without a response is retried as well
+            $batchIndexes | Where-Object { $_ -notin $answeredIndexes } | ForEach-Object { $retryIndexes.Add($_) }
+        }
+
+        $pendingIndexes = @($retryIndexes)
     }
 
-    $Request = @{
-        Uri         = "https://outlook.office365.com/adminapi/beta/$TenantID/InvokeCommand?`$select=Guid,ExternalDirectoryObjectId,RecipientTypeDetails"
-        Method      = 'Post'
-        Headers     = $Authorization
-        ContentType = 'application/json'
-        Body        = [System.Text.Encoding]::UTF8.GetBytes(
-            (ConvertTo-Json $Body -Depth 10 -Compress)
-        )
-    }
-
-    $Response = Invoke-RestMethod @Request
-    $Response.Value |
-        Where-Object { $_.RecipientTypeDetails -eq 'UserMailbox' -and -not [string]::IsNullOrEmpty($_.ExternalDirectoryObjectId) } |
-        Select-Object ExternalDirectoryObjectId, Guid, RecipientTypeDetails
+    Write-Output $resultsByIndex
 }
 
 function Resolve-MS-Entra-ExoError {
@@ -256,16 +379,28 @@ try {
     $Groups = Get-ExODistributionGroups -Authorization $ExOAuthorization -TenantID $tenantId
     Write-Information "Retrieved $(($Groups | Measure-Object).Count) Exchange Online groups."
 
-    foreach ($group in $Groups) {
-        $actionMessage = "retrieving members for Exchange Online group [$($group.Guid)]"
+    $Groups = @($Groups | Where-Object { $null -ne $_ })
 
-        try {
-            $groupMembers = Get-ExODistributionGroupMembers -Authorization $ExOAuthorization -TenantID $tenantId -Identity $group.Guid
-        }
-        catch {
-            Write-Warning "Failed to retrieve members for Exchange Online group [$($group.Guid)]: $($_.Exception.Message)"
-            $groupMembers = @()
-        }
+    # Members of all groups via $batch (1 request per group, 10 per batch call)
+    $actionMessage = 'retrieving members of the Exchange Online groups'
+    Write-Information $actionMessage
+    $memberRequests = [System.Collections.Generic.List[object]]::new()
+    foreach ($group in $Groups) {
+        $memberRequests.Add(@{
+                CmdletName = 'Get-DistributionGroupMember'
+                Parameters = @{ Identity = $group.Guid; ResultSize = 'Unlimited' }
+                Select     = 'Guid,ExternalDirectoryObjectId,RecipientTypeDetails'
+            })
+    }
+
+    $memberResults = Invoke-ExOBatchRequest -Requests $memberRequests -Authorization $ExOAuthorization -TenantID $tenantId
+    Write-Information "Retrieved members of $($Groups.Count) groups with $([System.Math]::Ceiling($memberRequests.Count / 10)) batch call(s)."
+
+    for ($groupIndex = 0; $groupIndex -lt $Groups.Count; $groupIndex++) {
+        $group = $Groups[$groupIndex]
+        $groupMembers = @($memberResults[$groupIndex] | Where-Object {
+                $_.RecipientTypeDetails -eq 'UserMailbox' -and -not [string]::IsNullOrEmpty($_.ExternalDirectoryObjectId)
+            })
 
         $accountReferences = @($groupMembers | ForEach-Object { $_.ExternalDirectoryObjectId })
 
