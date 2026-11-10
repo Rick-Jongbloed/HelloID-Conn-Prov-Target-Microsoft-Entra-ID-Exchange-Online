@@ -164,6 +164,287 @@ function Resolve-MS-Entra-ExoError {
     }
 }
 
+function New-ExORequestHeaders {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [hashtable]$BaseHeaders
+    )
+
+    $headers = @{}
+    foreach ($key in $BaseHeaders.Keys) {
+        $headers[$key] = $BaseHeaders[$key]
+    }
+
+    # A unique id per request makes calls traceable in Exchange Online (and in support cases with Microsoft)
+    $headers['X-ResponseFormat'] = 'json'
+    $headers['return-client-request-id'] = 'true'
+    $headers['client-request-id'] = [guid]::NewGuid().ToString()
+
+    Write-Output $headers
+}
+
+function Get-ExORequestTimeout {
+    # Returns the number of seconds left before the deadline of this action, used as timeout for a single request
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [datetime]$Deadline
+    )
+
+    $remainingSeconds = [int][System.Math]::Floor(($Deadline - [datetime]::UtcNow).TotalSeconds)
+    if ($remainingSeconds -lt 1) {
+        throw 'The time limit for this action has been reached'
+    }
+
+    Write-Output $remainingSeconds
+}
+
+function Get-ExORetryDelay {
+    # Returns the number of milliseconds to wait before a retry, or -1 when the error is not retryable
+    # or when there is not enough time left before the deadline of this action
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [System.Management.Automation.ErrorRecord]$ErrorRecord,
+
+        [Parameter(Mandatory)]
+        [int]$Attempt,
+
+        [Parameter(Mandatory)]
+        [datetime]$Deadline,
+
+        [Parameter()]
+        [int]$MaxRetries = 3
+    )
+
+    if ($Attempt -ge $MaxRetries) {
+        return -1
+    }
+
+    # Transient Exchange Online errors, these can be returned by the cmdlet itself
+    $retryableExceptions = @(
+        'DCOverloadedException'
+        'SuitabilityDirectoryException'
+        'ServerInMMException'
+        'ADServerSettingsChangedException'
+        'StorageTransientException'
+    )
+
+    $errorText = "$($ErrorRecord.Exception.Message) $($ErrorRecord.ErrorDetails.Message)"
+    $statusCode = $null
+    if ($null -ne $ErrorRecord.Exception.Response) {
+        $statusCode = [int]$ErrorRecord.Exception.Response.StatusCode
+    }
+
+    $delay = -1
+    if ($statusCode -eq 429) {
+        $delay = [int](1000 * [System.Math]::Pow(2, $Attempt))
+        try {
+            if ($PSVersionTable.PSVersion.Major -le 5) {
+                $retryAfter = $ErrorRecord.Exception.Response.Headers['Retry-After']
+            }
+            else {
+                $retryAfter = $ErrorRecord.Exception.Response.Headers.RetryAfter.Delta.TotalSeconds
+            }
+            if ($retryAfter) {
+                $delay = [int]([double]$retryAfter * 1000)
+            }
+        }
+        catch {
+            Write-Verbose 'Could not read the Retry-After header'
+        }
+    }
+    elseif (
+        $statusCode -in @(500, 502, 503, 504) -or
+        $ErrorRecord.Exception -is [System.Threading.Tasks.TaskCanceledException] -or
+        $ErrorRecord.Exception -is [System.TimeoutException] -or
+        ($retryableExceptions | Where-Object { $errorText.Contains($_) })
+    ) {
+        $delay = [int](1000 * [System.Math]::Pow(2, $Attempt)) + (Get-Random -Maximum 500)
+    }
+
+    # Only retry when there is still time left for the retry itself (at least 5 seconds)
+    if ($delay -lt 0 -or [datetime]::UtcNow.AddMilliseconds($delay).AddSeconds(5) -gt $Deadline) {
+        return -1
+    }
+
+    Write-Output $delay
+}
+
+function Assert-ExOCommandResponse {
+    # The Exchange Admin API can return cmdlet errors and warnings inside an HTTP 200 response
+    [CmdletBinding()]
+    param(
+        [Parameter()]
+        [object]$Response,
+
+        [Parameter(Mandatory)]
+        [string]$CmdletName,
+
+        [Parameter(Mandatory)]
+        [string]$ClientRequestId
+    )
+
+    if ($null -eq $Response) {
+        return
+    }
+
+    foreach ($warning in @($Response.'@adminapi.warnings')) {
+        if (-not [string]::IsNullOrEmpty($warning)) {
+            Write-Warning "$($CmdletName): $($warning)"
+        }
+    }
+
+    if ($Response.'@adminapi.errors') {
+        throw "$($CmdletName) failed (client-request-id $($ClientRequestId)): $($Response.'@adminapi.errors' -join ' | ')"
+    }
+}
+function Test-ExOMailboxPermission {
+    # Returns $true when the user has an explicit (not inherited, not denied) Full Access permission on the mailbox
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [hashtable]$Authorization,
+
+        [Parameter(Mandatory)]
+        [string]$TenantID,
+
+        [Parameter(Mandatory)]
+        [string]$Identity,
+
+        [Parameter(Mandatory)]
+        [string]$User,
+
+        [Parameter(Mandatory)]
+        [datetime]$Deadline
+    )
+
+    $body = @{
+        CmdletInput = @{
+            CmdletName = 'Get-MailboxPermission'
+            Parameters = @{
+                Identity    = $Identity
+                User        = $User
+                # Without ErrorAction Stop, cmdlet errors are returned inside an HTTP 200 response in '@adminapi.errors'
+                ErrorAction = 'Stop'
+            }
+        }
+    }
+
+    for ($attempt = 0; ; $attempt++) {
+        $headers = New-ExORequestHeaders -BaseHeaders $Authorization
+        $request = @{
+            Uri         = "https://outlook.office365.com/adminapi/beta/$TenantID/InvokeCommand?`$select=User,AccessRights,Deny,IsInherited"
+            Method      = 'Post'
+            Headers     = $headers
+            ContentType = 'application/json'
+            Body        = [System.Text.Encoding]::UTF8.GetBytes(
+                (ConvertTo-Json $body -Depth 10 -Compress)
+            )
+            TimeoutSec  = Get-ExORequestTimeout -Deadline $Deadline
+        }
+
+        try {
+            $response = Invoke-RestMethod @request
+            Assert-ExOCommandResponse -Response $response -CmdletName 'Get-MailboxPermission' -ClientRequestId $headers['client-request-id']
+            break
+        }
+        catch {
+            $retryDelay = Get-ExORetryDelay -ErrorRecord $_ -Attempt $attempt -Deadline $Deadline
+            if ($retryDelay -lt 0) {
+                throw
+            }
+
+            Write-Warning "Get-MailboxPermission failed (attempt $($attempt + 1), client-request-id $($headers['client-request-id'])), retrying in $($retryDelay) ms. Error: $($_.Exception.Message)"
+            Start-Sleep -Milliseconds $retryDelay
+        }
+    }
+
+    $activeEntries = @(
+        @($response.value) | Where-Object {
+            "$($_.AccessRights)" -match 'FullAccess' -and
+            "$($_.Deny)" -ne 'True' -and
+            "$($_.IsInherited)" -ne 'True'
+        }
+    )
+
+    Write-Output ($activeEntries.Count -gt 0)
+}
+
+function Test-ExORecipientPermission {
+    # Returns $true when the trustee has an explicit (not inherited, not denied) Send As permission on the mailbox
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [hashtable]$Authorization,
+
+        [Parameter(Mandatory)]
+        [string]$TenantID,
+
+        [Parameter(Mandatory)]
+        [string]$Identity,
+
+        [Parameter(Mandatory)]
+        [string]$Trustee,
+
+        [Parameter(Mandatory)]
+        [datetime]$Deadline
+    )
+
+    $body = @{
+        CmdletInput = @{
+            CmdletName = 'Get-RecipientPermission'
+            Parameters = @{
+                Identity     = $Identity
+                Trustee      = $Trustee
+                AccessRights = 'SendAs'
+                # Without ErrorAction Stop, cmdlet errors are returned inside an HTTP 200 response in '@adminapi.errors'
+                ErrorAction  = 'Stop'
+            }
+        }
+    }
+
+    for ($attempt = 0; ; $attempt++) {
+        $headers = New-ExORequestHeaders -BaseHeaders $Authorization
+        $request = @{
+            Uri         = "https://outlook.office365.com/adminapi/beta/$TenantID/InvokeCommand?`$select=Trustee,AccessRights,AccessControlType,IsInherited"
+            Method      = 'Post'
+            Headers     = $headers
+            ContentType = 'application/json'
+            Body        = [System.Text.Encoding]::UTF8.GetBytes(
+                (ConvertTo-Json $body -Depth 10 -Compress)
+            )
+            TimeoutSec  = Get-ExORequestTimeout -Deadline $Deadline
+        }
+
+        try {
+            $response = Invoke-RestMethod @request
+            Assert-ExOCommandResponse -Response $response -CmdletName 'Get-RecipientPermission' -ClientRequestId $headers['client-request-id']
+            break
+        }
+        catch {
+            $retryDelay = Get-ExORetryDelay -ErrorRecord $_ -Attempt $attempt -Deadline $Deadline
+            if ($retryDelay -lt 0) {
+                throw
+            }
+
+            Write-Warning "Get-RecipientPermission failed (attempt $($attempt + 1), client-request-id $($headers['client-request-id'])), retrying in $($retryDelay) ms. Error: $($_.Exception.Message)"
+            Start-Sleep -Milliseconds $retryDelay
+        }
+    }
+
+    $activeEntries = @(
+        @($response.value) | Where-Object {
+            "$($_.AccessRights)" -match 'SendAs' -and
+            "$($_.AccessControlType)" -notin @('Deny', '1') -and
+            "$($_.IsInherited)" -ne 'True'
+        }
+    )
+
+    Write-Output ($activeEntries.Count -gt 0)
+}
+
 function Remove-ExOMailboxPermission {
     [CmdletBinding()]
     param(
@@ -179,38 +460,55 @@ function Remove-ExOMailboxPermission {
         [Parameter(Mandatory)]
         [string]$User,
 
-        [Parameter()]
-        [string]$AccessRights = 'FullAccess',
-
-        [Parameter()]
-        [string]$InheritanceType = 'All'
+        [Parameter(Mandatory)]
+        [datetime]$Deadline
     )
 
-    $Body = @{
+    $body = @{
         CmdletInput = @{
             CmdletName = 'Remove-MailboxPermission'
             Parameters = @{
                 Identity        = $Identity
                 User            = $User
-                AccessRights    = $AccessRights
-                InheritanceType = $InheritanceType
+                AccessRights    = 'FullAccess'
+                InheritanceType = 'All'
                 Confirm         = $false
+                # Without ErrorAction Stop, cmdlet errors are returned inside an HTTP 200 response in '@adminapi.errors'
+                ErrorAction     = 'Stop'
             }
         }
     }
 
-    $Request = @{
-        Uri         = "https://outlook.office365.com/adminapi/beta/$TenantID/InvokeCommand"
-        Method      = 'Post'
-        Headers     = $Authorization
-        ContentType = 'application/json'
-        Body        = [System.Text.Encoding]::UTF8.GetBytes(
-            (ConvertTo-Json $Body -Depth 10 -Compress)
-        )
+    for ($attempt = 0; ; $attempt++) {
+        $headers = New-ExORequestHeaders -BaseHeaders $Authorization
+        $request = @{
+            Uri         = "https://outlook.office365.com/adminapi/beta/$TenantID/InvokeCommand"
+            Method      = 'Post'
+            Headers     = $headers
+            ContentType = 'application/json'
+            Body        = [System.Text.Encoding]::UTF8.GetBytes(
+                (ConvertTo-Json $body -Depth 10 -Compress)
+            )
+            TimeoutSec  = Get-ExORequestTimeout -Deadline $Deadline
+        }
+
+        try {
+            $response = Invoke-RestMethod @request
+            Assert-ExOCommandResponse -Response $response -CmdletName 'Remove-MailboxPermission' -ClientRequestId $headers['client-request-id']
+            break
+        }
+        catch {
+            $retryDelay = Get-ExORetryDelay -ErrorRecord $_ -Attempt $attempt -Deadline $Deadline
+            if ($retryDelay -lt 0) {
+                throw
+            }
+
+            Write-Warning "Remove-MailboxPermission failed (attempt $($attempt + 1), client-request-id $($headers['client-request-id'])), retrying in $($retryDelay) ms. Error: $($_.Exception.Message)"
+            Start-Sleep -Milliseconds $retryDelay
+        }
     }
 
-    $Response = Invoke-RestMethod @Request
-    $Response
+    Write-Output $response
 }
 
 function Remove-ExORecipientPermission {
@@ -228,37 +526,57 @@ function Remove-ExORecipientPermission {
         [Parameter(Mandatory)]
         [string]$Trustee,
 
-        [Parameter()]
-        [string]$AccessRights = 'SendAs'
+        [Parameter(Mandatory)]
+        [datetime]$Deadline
     )
 
-    $Body = @{
+    $body = @{
         CmdletInput = @{
             CmdletName = 'Remove-RecipientPermission'
             Parameters = @{
                 Identity     = $Identity
                 Trustee      = $Trustee
-                AccessRights = $AccessRights
+                AccessRights = 'SendAs'
                 Confirm      = $false
+                # Without ErrorAction Stop, cmdlet errors are returned inside an HTTP 200 response in '@adminapi.errors'
+                ErrorAction  = 'Stop'
             }
         }
     }
 
-    $Request = @{
-        Uri         = "https://outlook.office365.com/adminapi/beta/$TenantID/InvokeCommand"
-        Method      = 'Post'
-        Headers     = $Authorization
-        ContentType = 'application/json'
-        Body        = [System.Text.Encoding]::UTF8.GetBytes(
-            (ConvertTo-Json $Body -Depth 10 -Compress)
-        )
+    for ($attempt = 0; ; $attempt++) {
+        $headers = New-ExORequestHeaders -BaseHeaders $Authorization
+        $request = @{
+            Uri         = "https://outlook.office365.com/adminapi/beta/$TenantID/InvokeCommand"
+            Method      = 'Post'
+            Headers     = $headers
+            ContentType = 'application/json'
+            Body        = [System.Text.Encoding]::UTF8.GetBytes(
+                (ConvertTo-Json $body -Depth 10 -Compress)
+            )
+            TimeoutSec  = Get-ExORequestTimeout -Deadline $Deadline
+        }
+
+        try {
+            $response = Invoke-RestMethod @request
+            Assert-ExOCommandResponse -Response $response -CmdletName 'Remove-RecipientPermission' -ClientRequestId $headers['client-request-id']
+            break
+        }
+        catch {
+            $retryDelay = Get-ExORetryDelay -ErrorRecord $_ -Attempt $attempt -Deadline $Deadline
+            if ($retryDelay -lt 0) {
+                throw
+            }
+
+            Write-Warning "Remove-RecipientPermission failed (attempt $($attempt + 1), client-request-id $($headers['client-request-id'])), retrying in $($retryDelay) ms. Error: $($_.Exception.Message)"
+            Start-Sleep -Milliseconds $retryDelay
+        }
     }
 
-    $Response = Invoke-RestMethod @Request
-    $Response
+    Write-Output $response
 }
 
-#Officially supported by Microsoft
+# Officially supported by Microsoft (v2.0 Mailbox endpoint). ErrorAction is not a supported parameter on this endpoint
 function Set-ExOMailboxRevokeGrantSendOnBehalfV2 {
     [CmdletBinding()]
     param(
@@ -272,10 +590,13 @@ function Set-ExOMailboxRevokeGrantSendOnBehalfV2 {
         [string]$Identity,
 
         [Parameter(Mandatory)]
-        [string]$GrantSendOnBehalfTo
+        [string]$GrantSendOnBehalfTo,
+
+        [Parameter(Mandatory)]
+        [datetime]$Deadline
     )
 
-    $Body = @{
+    $body = @{
         CmdletInput = @{
             CmdletName = 'Set-Mailbox'
             Parameters = @{
@@ -288,29 +609,59 @@ function Set-ExOMailboxRevokeGrantSendOnBehalfV2 {
         }
     }
 
-    $Request = @{
-        Uri         = "https://outlook.office365.com/adminapi/v2.0/$TenantID/Mailbox"
-        Method      = 'Post'
-        Headers     = $Authorization
-        ContentType = 'application/json'
-        Body        = [System.Text.Encoding]::UTF8.GetBytes(
-            (ConvertTo-Json $Body -Depth 10 -Compress)
-        )
+    for ($attempt = 0; ; $attempt++) {
+        $headers = New-ExORequestHeaders -BaseHeaders $Authorization
+        $request = @{
+            Uri         = "https://outlook.office365.com/adminapi/v2.0/$TenantID/Mailbox"
+            Method      = 'Post'
+            Headers     = $headers
+            ContentType = 'application/json'
+            Body        = [System.Text.Encoding]::UTF8.GetBytes(
+                (ConvertTo-Json $body -Depth 10 -Compress)
+            )
+            TimeoutSec  = Get-ExORequestTimeout -Deadline $Deadline
+        }
+
+        try {
+            $response = Invoke-RestMethod @request
+            Assert-ExOCommandResponse -Response $response -CmdletName 'Set-Mailbox' -ClientRequestId $headers['client-request-id']
+            break
+        }
+        catch {
+            $retryDelay = Get-ExORetryDelay -ErrorRecord $_ -Attempt $attempt -Deadline $Deadline
+            if ($retryDelay -lt 0) {
+                throw
+            }
+
+            Write-Warning "Set-Mailbox failed (attempt $($attempt + 1), client-request-id $($headers['client-request-id'])), retrying in $($retryDelay) ms. Error: $($_.Exception.Message)"
+            Start-Sleep -Milliseconds $retryDelay
+        }
     }
 
-    $Response = Invoke-RestMethod @Request
-    $Response
+    Write-Output $response
 }
-
 #endregion Functions
 
 #region script
+# HelloID stops an action after 30 seconds. All requests, retries and the verification must finish before this deadline.
+$deadline = [datetime]::UtcNow.AddSeconds(25)
+$verificationIntervalSeconds = 2
+
 try {
     $actionMessage = 'validating account reference'
+    $accountReference = [string]$ActionContext.References.Account
 
     # Verify account reference
-    if ([string]::IsNullOrEmpty($ActionContext.References.Account)) {
+    if ([string]::IsNullOrWhiteSpace($accountReference)) {
         throw "The account reference could not be found"
+    }
+
+    $accountReference = $accountReference.Trim()
+    $mailboxId = $ActionContext.References.Permission.Id
+    $permission = $ActionContext.References.Permission.Permission
+
+    if ($permission -notin @('FullAccess', 'SendAs', 'SendOnBehalf')) {
+        throw "Unsupported permission type: [$($permission)]"
     }
 
     $actionMessage = 'authenticating to the Exchange Admin API'
@@ -329,53 +680,119 @@ try {
     # Format per Microsoft docs: APP:SystemMailbox{bb558c35-97f1-4cb9-8ff7-d53741dc928c}@<tenantIdOrOrganization>
     $ExOAuthorization['X-AnchorMailbox'] = "APP:SystemMailbox{bb558c35-97f1-4cb9-8ff7-d53741dc928c}@$($ActionContext.Configuration.TenantID)"
 
-    $actionMessage = "revoking permission [$($ActionContext.References.Permission.Permission)] on shared mailbox [$($ActionContext.References.Permission.Id)] from account [$($ActionContext.References.Account)]"
+    $exoRequestParams = @{
+        Authorization = $ExOAuthorization
+        TenantID      = $ActionContext.Configuration.TenantID
+        Identity      = $mailboxId
+        Deadline      = $deadline
+    }
 
-    switch ($ActionContext.References.Permission.Permission) {
-        'FullAccess' {
-            if ($ActionContext.DryRun -eq $false) {
-                [void](Remove-ExOMailboxPermission -Authorization $ExOAuthorization `
-                    -TenantID $ActionContext.Configuration.TenantID `
-                    -Identity $ActionContext.References.Permission.Id `
-                    -User $ActionContext.References.Account `
-                    -AccessRights 'FullAccess' `
-                    -InheritanceType 'All')
+    $actionMessage = "revoking permission [$($permission)] on shared mailbox [$($mailboxId)] from account [$($accountReference)]"
+
+    $alreadyRevoked = $false
+    $skipReason = $null
+
+    if ($ActionContext.DryRun -eq $true) {
+        Write-Information "DryRun: Would revoke $($permission) on $($mailboxId) from $($accountReference)"
+    }
+    else {
+        try {
+            switch ($permission) {
+                'FullAccess' {
+                    [void](Remove-ExOMailboxPermission @exoRequestParams -User $accountReference)
+                }
+                'SendAs' {
+                    [void](Remove-ExORecipientPermission @exoRequestParams -Trustee $accountReference)
+                }
+                'SendOnBehalf' {
+                    [void](Set-ExOMailboxRevokeGrantSendOnBehalfV2 @exoRequestParams -GrantSendOnBehalfTo $accountReference)
+                }
+            }
+        }
+        catch {
+            $revokeError = $PSItem
+            $revokeErrorText = "$($revokeError.Exception.Message) $($revokeError.ErrorDetails.Message)"
+
+            # The shared mailbox or the account no longer exists, so the permission no longer exists either
+            if ($revokeErrorText -match 'ManagementObjectNotFoundException|Request_ResourceNotFound') {
+                $alreadyRevoked = $true
+                $skipReason = 'The shared mailbox or the account no longer exists.'
+            }
+            elseif ($permission -eq 'SendOnBehalf') {
+                # Send on Behalf uses the officially supported v2.0 endpoint and is not verified
+                throw
             }
             else {
-                Write-Information "DryRun: Would revoke FullAccess on $($ActionContext.References.Permission.Id) from $($ActionContext.References.Account)"
+                # The revoke can fail while the permission is already removed (for example after a timeout or a retry by HelloID).
+                # Check the actual state before reporting an error.
+                try {
+                    if ($permission -eq 'FullAccess') {
+                        $stillPresent = Test-ExOMailboxPermission @exoRequestParams -User $accountReference
+                    }
+                    else {
+                        $stillPresent = Test-ExORecipientPermission @exoRequestParams -Trustee $accountReference
+                    }
+                }
+                catch {
+                    throw $revokeError
+                }
+
+                if ($stillPresent) {
+                    throw $revokeError
+                }
+
+                $alreadyRevoked = $true
+                $skipReason = 'The permission was already removed.'
             }
+
+            Write-Information "Revoking [$($permission)] returned an error, but the permission no longer exists. Error: $($revokeError.Exception.Message)"
         }
-        'SendAs' {
-            if ($ActionContext.DryRun -eq $false) {
-                [void](Remove-ExORecipientPermission -Authorization $ExOAuthorization `
-                    -TenantID $ActionContext.Configuration.TenantID `
-                    -Identity $ActionContext.References.Permission.Id `
-                    -Trustee $ActionContext.References.Account `
-                    -AccessRights 'SendAs')
+
+        # Verify that the permission is removed. The beta endpoint can report success while the change is not (yet) processed.
+        if ($permission -in @('FullAccess', 'SendAs') -and -not $alreadyRevoked) {
+            $actionMessage = "verifying removal of permission [$($permission)] on shared mailbox [$($mailboxId)] for account [$($accountReference)]"
+            $isRevoked = $false
+            $verificationAttempt = 0
+
+            while ($true) {
+                $verificationAttempt++
+                if ($permission -eq 'FullAccess') {
+                    $isRevoked = -not (Test-ExOMailboxPermission @exoRequestParams -User $accountReference)
+                }
+                else {
+                    $isRevoked = -not (Test-ExORecipientPermission @exoRequestParams -Trustee $accountReference)
+                }
+
+                if ($isRevoked) {
+                    break
+                }
+
+                # Stop when there is no time left for another check (wait + request)
+                if ([datetime]::UtcNow.AddSeconds($verificationIntervalSeconds + 3) -gt $deadline) {
+                    break
+                }
+
+                Start-Sleep -Seconds $verificationIntervalSeconds
             }
-            else {
-                Write-Information "DryRun: Would revoke SendAs on $($ActionContext.References.Permission.Id) from $($ActionContext.References.Account)"
+
+            if (-not $isRevoked) {
+                throw "The revoke returned success, but the permission is still visible after $($verificationAttempt) checks. HelloID will retry the action."
             }
+
+            Write-Information "Verified removal of permission [$($permission)] after $($verificationAttempt) check(s)"
         }
-        'SendOnBehalf' {
-            if ($ActionContext.DryRun -eq $false) {
-                [void](Set-ExOMailboxRevokeGrantSendOnBehalfV2 -Authorization $ExOAuthorization `
-                    -TenantID $ActionContext.Configuration.TenantID `
-                    -Identity $ActionContext.References.Permission.Id `
-                    -GrantSendOnBehalfTo $ActionContext.References.Account)
-            }
-            else {
-                Write-Information "DryRun: Would revoke SendOnBehalf on $($ActionContext.References.Permission.Id) from $($ActionContext.References.Account)"
-            }
-        }
-        default {
-            throw "Unsupported permission type: [$($ActionContext.References.Permission.Permission)]"
-        }
+    }
+
+    if ($alreadyRevoked) {
+        $auditMessage = "Skipped revoking permission [$($ActionContext.PermissionDisplayName)] with id [$($mailboxId)] from account with account reference [$($accountReference)]. Reason: $($skipReason)"
+    }
+    else {
+        $auditMessage = "Revoke permission [$($ActionContext.PermissionDisplayName)] with id [$($mailboxId)] from account with account reference [$($accountReference)] was successful"
     }
 
     $OutputContext.AuditLogs.Add(
         [PSCustomObject]@{
-            Message = "Revoke permission [$($ActionContext.PermissionDisplayName)] with id [$($ActionContext.References.Permission.Id)] from account with account reference [$($ActionContext.References.Account)] was successful"
+            Message = $auditMessage
             IsError = $false
         }
     )
@@ -383,33 +800,21 @@ try {
     $OutputContext.Success = $true
 }
 catch {
+    $OutputContext.Success = $false
     $ex = $PSItem
     if ($($ex.Exception.GetType().FullName -eq 'Microsoft.PowerShell.Commands.HttpResponseException') -or
         $($ex.Exception.GetType().FullName -eq 'System.Net.WebException')) {
         $errorObj = Resolve-MS-Entra-ExoError -ExceptionResponse $ex
-
-        if ($errorObj.ErrorDetails.error.code -eq 'Request_ResourceNotFound' -and $errorObj.ErrorDetails.error.message -like "*$($ActionContext.References.Permission.Id)*") {
-            $auditMessage = "Skipped revoking permission [$($ActionContext.PermissionDisplayName)] with id [$($ActionContext.References.Permission.Id)] from account with account reference [$($ActionContext.References.Account)]. Reason: User is already no longer a member or the permission no longer exists."
-            $auditError = $false
-            $OutputContext.Success = $true
-        }
-        else {
-            $auditMessage = "Error $($actionMessage). Error: $($errorObj.FriendlyMessage)"
-            $auditError = $true
-            Write-Warning "Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
-            $OutputContext.Success = $false
-        }
+        $auditMessage = "Error $($actionMessage). Error: $($errorObj.FriendlyMessage)"
+        Write-Warning "Error at Line '$($errorObj.ScriptLineNumber)': $($errorObj.Line). Error: $($errorObj.ErrorDetails)"
     }
     else {
         $auditMessage = "Error $($actionMessage). Error: $($ex.Exception.Message)"
-        $auditError = $true
         Write-Warning "Error at Line '$($ex.InvocationInfo.ScriptLineNumber)': $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
-        $OutputContext.Success = $false
     }
-
     $OutputContext.AuditLogs.Add([PSCustomObject]@{
             Message = $auditMessage
-            IsError = $auditError
+            IsError = $true
         })
 }
 #endregion script
