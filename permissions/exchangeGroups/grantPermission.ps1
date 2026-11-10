@@ -154,6 +154,142 @@ function Resolve-MS-Entra-ExoError {
     }
 }
 
+function New-ExORequestHeaders {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [hashtable]$BaseHeaders
+    )
+
+    $headers = @{}
+    foreach ($key in $BaseHeaders.Keys) {
+        $headers[$key] = $BaseHeaders[$key]
+    }
+
+    # A unique id per request makes calls traceable in Exchange Online (and in support cases with Microsoft)
+    $headers['X-ResponseFormat'] = 'json'
+    $headers['return-client-request-id'] = 'true'
+    $headers['client-request-id'] = [guid]::NewGuid().ToString()
+
+    Write-Output $headers
+}
+
+function Get-ExORequestTimeout {
+    # Returns the number of seconds left before the deadline of this action, used as timeout for a single request
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [datetime]$Deadline
+    )
+
+    $remainingSeconds = [int][System.Math]::Floor(($Deadline - [datetime]::UtcNow).TotalSeconds)
+    if ($remainingSeconds -lt 1) {
+        throw 'The time limit for this action has been reached'
+    }
+
+    Write-Output $remainingSeconds
+}
+
+function Get-ExORetryDelay {
+    # Returns the number of milliseconds to wait before a retry, or -1 when the error is not retryable
+    # or when there is not enough time left before the deadline of this action
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [System.Management.Automation.ErrorRecord]$ErrorRecord,
+
+        [Parameter(Mandatory)]
+        [int]$Attempt,
+
+        [Parameter(Mandatory)]
+        [datetime]$Deadline,
+
+        [Parameter()]
+        [int]$MaxRetries = 3
+    )
+
+    if ($Attempt -ge $MaxRetries) {
+        return -1
+    }
+
+    # Transient Exchange Online errors, these can be returned by the cmdlet itself
+    $retryableExceptions = @(
+        'DCOverloadedException'
+        'SuitabilityDirectoryException'
+        'ServerInMMException'
+        'ADServerSettingsChangedException'
+        'StorageTransientException'
+    )
+
+    $errorText = "$($ErrorRecord.Exception.Message) $($ErrorRecord.ErrorDetails.Message)"
+    $statusCode = $null
+    if ($null -ne $ErrorRecord.Exception.Response) {
+        $statusCode = [int]$ErrorRecord.Exception.Response.StatusCode
+    }
+
+    $delay = -1
+    if ($statusCode -eq 429) {
+        $delay = [int](1000 * [System.Math]::Pow(2, $Attempt))
+        try {
+            if ($PSVersionTable.PSVersion.Major -le 5) {
+                $retryAfter = $ErrorRecord.Exception.Response.Headers['Retry-After']
+            }
+            else {
+                $retryAfter = $ErrorRecord.Exception.Response.Headers.RetryAfter.Delta.TotalSeconds
+            }
+            if ($retryAfter) {
+                $delay = [int]([double]$retryAfter * 1000)
+            }
+        }
+        catch {
+            Write-Verbose 'Could not read the Retry-After header'
+        }
+    }
+    elseif (
+        $statusCode -in @(500, 502, 503, 504) -or
+        $ErrorRecord.Exception -is [System.Threading.Tasks.TaskCanceledException] -or
+        $ErrorRecord.Exception -is [System.TimeoutException] -or
+        ($retryableExceptions | Where-Object { $errorText.Contains($_) })
+    ) {
+        $delay = [int](1000 * [System.Math]::Pow(2, $Attempt)) + (Get-Random -Maximum 500)
+    }
+
+    # Only retry when there is still time left for the retry itself (at least 5 seconds)
+    if ($delay -lt 0 -or [datetime]::UtcNow.AddMilliseconds($delay).AddSeconds(5) -gt $Deadline) {
+        return -1
+    }
+
+    Write-Output $delay
+}
+
+function Assert-ExOCommandResponse {
+    # The Exchange Admin API can return cmdlet errors and warnings inside an HTTP 200 response
+    [CmdletBinding()]
+    param(
+        [Parameter()]
+        [object]$Response,
+
+        [Parameter(Mandatory)]
+        [string]$CmdletName,
+
+        [Parameter(Mandatory)]
+        [string]$ClientRequestId
+    )
+
+    if ($null -eq $Response) {
+        return
+    }
+
+    foreach ($warning in @($Response.'@adminapi.warnings')) {
+        if (-not [string]::IsNullOrEmpty($warning)) {
+            Write-Warning "$($CmdletName): $($warning)"
+        }
+    }
+
+    if ($Response.'@adminapi.errors') {
+        throw "$($CmdletName) failed (client-request-id $($ClientRequestId)): $($Response.'@adminapi.errors' -join ' | ')"
+    }
+}
 function Add-ExODistributionGroupMember {
     [CmdletBinding()]
     param(
@@ -167,10 +303,13 @@ function Add-ExODistributionGroupMember {
         [string]$Identity,
 
         [Parameter(Mandatory)]
-        [string]$Member
+        [string]$Member,
+
+        [Parameter(Mandatory)]
+        [datetime]$Deadline
     )
 
-    $Body = @{
+    $body = @{
         CmdletInput = @{
             CmdletName = 'Add-DistributionGroupMember'
             Parameters = @{
@@ -178,26 +317,49 @@ function Add-ExODistributionGroupMember {
                 Member                          = $Member
                 BypassSecurityGroupManagerCheck = $true
                 Confirm                         = $false
+                # Without ErrorAction Stop, cmdlet errors are returned inside an HTTP 200 response in '@adminapi.errors'
+                ErrorAction                     = 'Stop'
             }
         }
     }
 
-    $Request = @{
-        Uri         = "https://outlook.office365.com/adminapi/beta/$TenantID/InvokeCommand"
-        Method      = 'Post'
-        Headers     = $Authorization
-        ContentType = 'application/json'
-        Body        = [System.Text.Encoding]::UTF8.GetBytes(
-            (ConvertTo-Json $Body -Depth 10 -Compress)
-        )
+    for ($attempt = 0; ; $attempt++) {
+        $headers = New-ExORequestHeaders -BaseHeaders $Authorization
+        $request = @{
+            Uri         = "https://outlook.office365.com/adminapi/beta/$TenantID/InvokeCommand"
+            Method      = 'Post'
+            Headers     = $headers
+            ContentType = 'application/json'
+            Body        = [System.Text.Encoding]::UTF8.GetBytes(
+                (ConvertTo-Json $body -Depth 10 -Compress)
+            )
+            TimeoutSec  = Get-ExORequestTimeout -Deadline $Deadline
+        }
+
+        try {
+            $response = Invoke-RestMethod @request
+            Assert-ExOCommandResponse -Response $response -CmdletName 'Add-DistributionGroupMember' -ClientRequestId $headers['client-request-id']
+            break
+        }
+        catch {
+            $retryDelay = Get-ExORetryDelay -ErrorRecord $_ -Attempt $attempt -Deadline $Deadline
+            if ($retryDelay -lt 0) {
+                throw
+            }
+
+            Write-Warning "Add-DistributionGroupMember failed (attempt $($attempt + 1), client-request-id $($headers['client-request-id'])), retrying in $($retryDelay) ms. Error: $($_.Exception.Message)"
+            Start-Sleep -Milliseconds $retryDelay
+        }
     }
 
-    $Response = Invoke-RestMethod @Request
-    $Response
+    Write-Output $response
 }
 #endregion Functions
 
 #region script
+# HelloID stops an action after 30 seconds. All requests and retries must finish before this deadline.
+$deadline = [datetime]::UtcNow.AddSeconds(25)
+
 try {
     $actionMessage = 'validating account reference'
 
@@ -223,19 +385,39 @@ try {
 
     $actionMessage = "granting Exchange Online group [$($ActionContext.PermissionDisplayName)] with id [$($ActionContext.References.Permission.Id)] to account [$($ActionContext.References.Account)]"
 
+    $alreadyMember = $false
+
     if ($ActionContext.DryRun -eq $false) {
-        [void](Add-ExODistributionGroupMember -Authorization $ExOAuthorization `
-            -TenantID $ActionContext.Configuration.TenantID `
-            -Identity $ActionContext.References.Permission.Id `
-            -Member $ActionContext.References.Account)
+        try {
+            [void](Add-ExODistributionGroupMember -Authorization $ExOAuthorization `
+                -TenantID $ActionContext.Configuration.TenantID `
+                -Identity $ActionContext.References.Permission.Id `
+                -Member $ActionContext.References.Account `
+                -Deadline $deadline)
+        }
+        catch {
+            # The account is already a member (for example after a timeout or a retry by HelloID)
+            if ("$($PSItem.Exception.Message) $($PSItem.ErrorDetails.Message)" -match 'MemberAlreadyExistsException|is already a member') {
+                $alreadyMember = $true
+                Write-Information "Account is already a member of Exchange Online group $($ActionContext.References.Permission.Id)"
+            }
+            else {
+                throw
+            }
+        }
     }
     else {
         Write-Information "DryRun: Would grant Exchange Online group $($ActionContext.References.Permission.Id) to $($ActionContext.References.Account)"
     }
 
+    $auditMessage = "Grant permission [$($ActionContext.PermissionDisplayName)] with id [$($ActionContext.References.Permission.Id)] to account with account reference [$($ActionContext.References.Account)] was successful"
+    if ($alreadyMember) {
+        $auditMessage = "$($auditMessage) (the account was already a member)"
+    }
+
     $OutputContext.AuditLogs.Add(
         [PSCustomObject]@{
-            Message = "Grant permission [$($ActionContext.PermissionDisplayName)] with id [$($ActionContext.References.Permission.Id)] to account with account reference [$($ActionContext.References.Account)] was successful"
+            Message = $auditMessage
             IsError = $false
         }
     )
