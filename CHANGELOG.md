@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com), and this project adheres to [Semantic Versioning](https://semver.org).
 
+## [2.7.1] - 2026-10-16
+
+### Fix
+- **update.ps1**: Added `-CaseSensitive` to attribute comparisons so changes that differ only by letter casing are detected for Entra ID and Exchange Online. Now this fields will also be updated in Entra ID and Exchange Online.
+
 ## [2.7.0] - 2026-09-30
 
 ### Changed
