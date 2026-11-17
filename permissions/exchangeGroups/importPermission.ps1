@@ -121,20 +121,27 @@ function Get-ExODistributionGroups {
         }
     }
 
-    $Request = @{
-        Uri         = "https://outlook.office365.com/adminapi/beta/$TenantID/InvokeCommand?`$select=Guid,DisplayName,RecipientTypeDetails,Description,IsDirSynced"
-        Method      = 'Post'
-        Headers     = $Authorization
-        ContentType = 'application/json'
-        Body        = [System.Text.Encoding]::UTF8.GetBytes(
-            (ConvertTo-Json $Body -Depth 10 -Compress)
-        )
-    }
+    $Uri = "https://outlook.office365.com/adminapi/beta/$TenantID/InvokeCommand?`$select=Guid,DisplayName,RecipientTypeDetails,Description,IsDirSynced"
 
-    $Response = Invoke-RestMethod @Request
-    $Response.Value |
-        Where-Object { $_.IsDirSynced -notin @($true, 'True') -and -not [string]::IsNullOrEmpty($_.Guid) } |
-        Select-Object Guid, DisplayName, RecipientTypeDetails, Description
+    do {
+        $Request = @{
+            Uri         = $Uri
+            Method      = 'Post'
+            Headers     = $Authorization
+            ContentType = 'application/json'
+            Body        = [System.Text.Encoding]::UTF8.GetBytes(
+                (ConvertTo-Json $Body -Depth 10 -Compress)
+            )
+        }
+
+        $Response = Invoke-RestMethod @Request
+        $Response.Value |
+            Where-Object { $_.IsDirSynced -notin @($true, 'True') -and -not [string]::IsNullOrEmpty($_.Guid) } |
+            Select-Object Guid, DisplayName, RecipientTypeDetails, Description
+
+        # A large result is returned in pages; the next page is requested with the same body
+        $Uri = $Response.'@odata.nextLink'
+    } while ($Uri)
 }
 
 function New-ExORequestHeaders {
@@ -155,6 +162,74 @@ function New-ExORequestHeaders {
     $headers['client-request-id'] = [guid]::NewGuid().ToString()
 
     Write-Output $headers
+}
+
+function Get-ExONextPages {
+    <#
+        Follows '@odata.nextLink' of a large result: the Exchange Admin API returns a large result in pages, and every
+        next page is requested with the same cmdlet body. Returns the items of all remaining pages.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]
+        $NextLink,
+
+        [Parameter(Mandatory)]
+        [hashtable]
+        $Request,
+
+        [Parameter(Mandatory)]
+        [hashtable]
+        $Authorization,
+
+        [int]
+        $MaxRetries = 3
+    )
+
+    $parameters = $Request.Parameters.Clone()
+    $parameters['ErrorAction'] = 'Stop'
+    $body = [System.Text.Encoding]::UTF8.GetBytes(
+        (ConvertTo-Json @{ CmdletInput = @{ CmdletName = $Request.CmdletName; Parameters = $parameters } } -Depth 10 -Compress)
+    )
+
+    $uri = $NextLink
+    while (-not [string]::IsNullOrEmpty($uri)) {
+        for ($attempt = 0; ; $attempt++) {
+            $headers = New-ExORequestHeaders -BaseHeaders $Authorization
+            try {
+                $response = Invoke-RestMethod -Uri $uri -Method Post -Headers $headers -ContentType 'application/json' -Body $body -TimeoutSec 120
+                break
+            }
+            catch {
+                $statusCode = $null
+                if ($null -ne $_.Exception.Response) {
+                    $statusCode = [int]$_.Exception.Response.StatusCode
+                }
+
+                $isRetryable = $statusCode -eq 429 -or $statusCode -ge 500 -or $_.Exception -is [System.Threading.Tasks.TaskCanceledException]
+                if ($attempt -ge $MaxRetries -or -not $isRetryable) {
+                    throw
+                }
+
+                $delaySeconds = [int](2 * [System.Math]::Pow(2, $attempt))
+                Write-Warning "Next page of $($Request.CmdletName) for [$($Request.Parameters.Identity)] failed (client-request-id $($headers['client-request-id'])), retrying in $($delaySeconds) seconds. Error: $($_.Exception.Message)"
+                Start-Sleep -Seconds $delaySeconds
+            }
+        }
+
+        if ($response.'@adminapi.errors') {
+            throw "$($Request.CmdletName) for [$($Request.Parameters.Identity)] failed on a next page (client-request-id $($headers['client-request-id'])): $($response.'@adminapi.errors' -join ' | ')"
+        }
+
+        foreach ($item in @($response.value)) {
+            if ($null -ne $item) {
+                Write-Output $item
+            }
+        }
+
+        $uri = $response.'@odata.nextLink'
+    }
 }
 
 function Invoke-ExOBatchRequest {
@@ -274,7 +349,20 @@ function Invoke-ExOBatchRequest {
                 $request = $Requests[$index]
 
                 if ($status -ge 200 -and $status -lt 300 -and -not $response.body.'@adminapi.errors') {
-                    $resultsByIndex[$index] = @($response.body.value)
+                    $values = [System.Collections.Generic.List[object]]::new()
+                    foreach ($item in @($response.body.value)) {
+                        if ($null -ne $item) {
+                            $values.Add($item)
+                        }
+                    }
+
+                    # A large result (many members or permissions) is returned in pages: get the remaining pages
+                    if (-not [string]::IsNullOrEmpty($response.body.'@odata.nextLink')) {
+                        Get-ExONextPages -NextLink $response.body.'@odata.nextLink' -Request $request -Authorization $Authorization -MaxRetries $MaxRetries |
+                            ForEach-Object { $values.Add($_) }
+                    }
+
+                    $resultsByIndex[$index] = @($values)
                 }
                 elseif ($status -eq 429 -or $status -ge 500) {
                     $retryIndexes.Add($index)

@@ -175,21 +175,28 @@ function Get-ExODistributionGroups {
         }
     }
 
-    $Request = @{
-        Uri         = "https://outlook.office365.com/adminapi/beta/$TenantID/InvokeCommand?`$select=Guid,DisplayName,RecipientTypeDetails,IsDirSynced"
-        Method      = 'Post'
-        Headers     = $Authorization
-        ContentType = 'application/json'
-        Body        = [System.Text.Encoding]::UTF8.GetBytes(
-            (ConvertTo-Json $Body -Depth 10 -Compress)
-        )
-        ErrorAction = 'Stop'
-    }
+    $Uri = "https://outlook.office365.com/adminapi/beta/$TenantID/InvokeCommand?`$select=Guid,DisplayName,RecipientTypeDetails,IsDirSynced"
 
-    $Response = Invoke-RestMethod @Request
-    $Response.Value |
-        Where-Object { $_.IsDirSynced -notin @($true, 'True') -and -not [string]::IsNullOrEmpty($_.Guid) } |
-        Select-Object Guid, DisplayName, RecipientTypeDetails
+    do {
+        $Request = @{
+            Uri         = $Uri
+            Method      = 'Post'
+            Headers     = $Authorization
+            ContentType = 'application/json'
+            Body        = [System.Text.Encoding]::UTF8.GetBytes(
+                (ConvertTo-Json $Body -Depth 10 -Compress)
+            )
+            ErrorAction = 'Stop'
+        }
+
+        $Response = Invoke-RestMethod @Request
+        $Response.Value |
+            Where-Object { $_.IsDirSynced -notin @($true, 'True') -and -not [string]::IsNullOrEmpty($_.Guid) } |
+            Select-Object Guid, DisplayName, RecipientTypeDetails
+
+        # A large result is returned in pages; the next page is requested with the same body
+        $Uri = $Response.'@odata.nextLink'
+    } while ($Uri)
 }
 #endregion Functions
 

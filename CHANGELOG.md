@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file. The format 
 
 ### Changed
 - **permissions/sharedMailboxes/grantPermission.ps1** and **revokePermission.ps1**: `X-AnchorMailbox` is now `Oid:<shared mailbox object id>@<tenant id>` instead of the system mailbox, so all requests for one shared mailbox are routed to the same Exchange backend server. The import scripts keep the system mailbox anchor.
+- **permissions/sharedMailboxes/importPermission.ps1**, **permissions/exchangeGroups/importPermission.ps1** and **permissions/exchangeGroups/permissions.ps1**: large results are now read completely. The list of distribution groups and every `$batch` sub-response (mailbox permissions, recipient permissions, group members) follow `@odata.nextLink` until the last page; before, only the first page was used.
 
 ### Known limitations
 - **Send As**: when Exchange Online switches backend server between consecutive Send As changes on the same mailbox, the newest changes (of the last seconds) can be overwritten without an error. This was reproduced with the system mailbox anchor (6 of 6,687 changes in one test, all at one server switch). Full Access, Send on Behalf and Exchange group memberships are not affected. Advice: check Send As after large batches (first enforcement, a business rule for a whole department).
