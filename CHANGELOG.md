@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com), and this project adheres to [Semantic Versioning](https://semver.org).
 
+## [Unreleased]
+
+### Changed
+- **permissions/sharedMailboxes/grantPermission.ps1** and **revokePermission.ps1**: `X-AnchorMailbox` is now `Oid:<shared mailbox object id>@<tenant id>` instead of the system mailbox, so all requests for one shared mailbox are routed to the same Exchange backend server. The import scripts keep the system mailbox anchor.
+
+### Known limitations
+- **Send As**: when Exchange Online switches backend server between consecutive Send As changes on the same mailbox, the newest changes (of the last seconds) can be overwritten without an error. This was reproduced with the system mailbox anchor (6 of 6,687 changes in one test, all at one server switch). Full Access, Send on Behalf and Exchange group memberships are not affected. Advice: check Send As after large batches (first enforcement, a business rule for a whole department).
+
 ## [2.7.0] - 2026-09-30
 
 ### Changed

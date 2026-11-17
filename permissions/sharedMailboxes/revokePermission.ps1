@@ -676,9 +676,11 @@ try {
 
     Write-Information 'Successfully authenticated the Exchange Admin API'
 
-    # Use the same routing hint for every request, so all calls (including verification) are routed to the same backend.
-    # Format per Microsoft docs: APP:SystemMailbox{bb558c35-97f1-4cb9-8ff7-d53741dc928c}@<tenantIdOrOrganization>
-    $ExOAuthorization['X-AnchorMailbox'] = "APP:SystemMailbox{bb558c35-97f1-4cb9-8ff7-d53741dc928c}@$($ActionContext.Configuration.TenantID)"
+    # Route every request of this action to the backend server of the shared mailbox itself (Oid:<object id>@<tenant id>).
+    # Send As is stored in the ACL of the mailbox; a write via another backend server can overwrite recent Send As changes
+    # (lost update, reproduced in tests). Routing per mailbox keeps all changes on one mailbox on the same server.
+    # Note: Microsoft's examples use APP:SystemMailbox{bb558c35-97f1-4cb9-8ff7-d53741dc928c}@<tenant>; the import keeps that anchor.
+    $ExOAuthorization['X-AnchorMailbox'] = "Oid:$($mailboxId)@$($ActionContext.Configuration.TenantID)"
 
     $exoRequestParams = @{
         Authorization = $ExOAuthorization
