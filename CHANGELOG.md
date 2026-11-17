@@ -10,6 +10,11 @@ All notable changes to this project will be documented in this file. The format 
 ### Known limitations
 - **Send As**: when Exchange Online switches backend server between consecutive Send As changes on the same mailbox, the newest changes (of the last seconds) can be overwritten without an error. This was reproduced with the system mailbox anchor (6 of 6,687 changes in one test, all at one server switch). Full Access, Send on Behalf and Exchange group memberships are not affected. Advice: check Send As after large batches (first enforcement, a business rule for a whole department).
 
+## [2.7.1] - 2026-10-16
+
+### Fix
+- **update.ps1**: Added `-CaseSensitive` to attribute comparisons so changes that differ only by letter casing are detected for Entra ID and Exchange Online. Now this fields will also be updated in Entra ID and Exchange Online.
+
 ## [2.7.0] - 2026-09-30
 
 ### Changed
