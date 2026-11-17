@@ -112,14 +112,14 @@ function Get-ExOSharedMailboxes {
         [string]$TenantID
     )
 
-    # RecipientTypeDetails filters on the server; ResultSize Unlimited plus @odata.nextLink returns all mailboxes
+    # ResultSize Unlimited plus @odata.nextLink returns all mailboxes. The v2.0 endpoint does not accept
+    # -RecipientTypeDetails (400 Bad Request), so the mailbox type is filtered below.
     $Uri = "https://outlook.office365.com/adminapi/v2.0/$TenantID/Mailbox?`$select=ExternalDirectoryObjectId,DisplayName,UserPrincipalName,RecipientTypeDetails,GrantSendOnBehalfTo,Identity"
     $Body = @{
         CmdletInput = @{
             CmdletName = 'Get-Mailbox'
             Parameters = @{
-                RecipientTypeDetails = 'SharedMailbox'
-                ResultSize           = 'Unlimited'
+                ResultSize = 'Unlimited'
             }
         }
     }
@@ -146,14 +146,14 @@ function Get-ExOUserMailboxes {
         [string]$TenantID
     )
 
-    # RecipientTypeDetails filters on the server; ResultSize Unlimited plus @odata.nextLink returns all mailboxes
+    # ResultSize Unlimited plus @odata.nextLink returns all mailboxes. The v2.0 endpoint does not accept
+    # -RecipientTypeDetails (400 Bad Request), so the mailbox type is filtered below.
     $Uri = "https://outlook.office365.com/adminapi/v2.0/$TenantID/Mailbox?`$select=ExternalDirectoryObjectId,UserPrincipalName,RecipientTypeDetails,Identity"
     $Body = @{
         CmdletInput = @{
             CmdletName = 'Get-Mailbox'
             Parameters = @{
-                RecipientTypeDetails = 'UserMailbox'
-                ResultSize           = 'Unlimited'
+                ResultSize = 'Unlimited'
             }
         }
     }
