@@ -7,6 +7,14 @@ All notable changes to this project will be documented in this file. The format 
 ### Changed
 - **permissions/sharedMailboxes/grantPermission.ps1** and **revokePermission.ps1**: `X-AnchorMailbox` is now `Oid:<shared mailbox object id>@<tenant id>` instead of the system mailbox, so all requests for one shared mailbox are routed to the same Exchange backend server. The import scripts keep the system mailbox anchor.
 - **permissions/sharedMailboxes/importPermission.ps1**, **permissions/exchangeGroups/importPermission.ps1** and **permissions/exchangeGroups/permissions.ps1**: large results are now read completely. The list of distribution groups and every `$batch` sub-response (mailbox permissions, recipient permissions, group members) follow `@odata.nextLink` until the last page; before, only the first page was used.
+- **permissions/exchangeGroups**: groups are referenced by `ExchangeObjectId` instead of `Guid`, because the `Guid` can change during a tenant relocation (see [ExchangeOnline issue #30](https://github.com/Tools4everBV/HelloID-Conn-Prov-Target-ExchangeOnline/issues/30)). Grant and revoke accept both, so existing entitlements keep working. Where `Guid` and `ExchangeObjectId` differ, the permission reference of the group changes in HelloID.
+- **permissions/sharedMailboxes/permissions.ps1** and **importPermission.ps1**: `Get-Mailbox` filters on the server with `-RecipientTypeDetails` and uses `ResultSize Unlimited` (was `500`) with `@odata.nextLink`.
+- **Exchange list and import scripts**: every list request retries on 429, 5xx and timeouts, sends a `client-request-id` and stops on `@adminapi.errors`, so HelloID never receives a partial list.
+- **permissions/exchangeGroups/grantPermission.ps1** and **revokePermission.ps1**: the account reference is validated and trimmed like in the shared mailbox scripts, and DryRun is checked with `-ne $true`.
+
+### Fixed
+- **Exchange import scripts**: with more than 500 accounts on one permission, every chunk is now a separate object; before, all chunks carried the accounts of the last chunk.
+- **permissions/sharedMailboxes**: error messages now read `error.details.message`, and the certificate is checked for a private key before signing.
 
 ### Known limitations
 - **Send As**: when Exchange Online switches backend server between consecutive Send As changes on the same mailbox, the newest changes (of the last seconds) can be overwritten without an error. This was reproduced with the system mailbox anchor (6 of 6,687 changes in one test, all at one server switch). Full Access, Send on Behalf and Exchange group memberships are not affected. Advice: check Send As after large batches (first enforcement, a business rule for a whole department).

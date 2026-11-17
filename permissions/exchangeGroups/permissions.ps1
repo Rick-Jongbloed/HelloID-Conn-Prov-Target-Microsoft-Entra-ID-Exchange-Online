@@ -133,7 +133,6 @@ function Resolve-MS-Entra-ExoError {
                     }
                 }
             }
-
             $errorDetailsObject = $httpErrorObj.ErrorDetails
             if ($errorDetailsObject.error_description) {
                 $httpErrorObj.FriendlyMessage = $errorDetailsObject.error_description
@@ -151,9 +150,86 @@ function Resolve-MS-Entra-ExoError {
         catch {
             $httpErrorObj.FriendlyMessage = $httpErrorObj.ErrorDetails
         }
-
         Write-Output $httpErrorObj
     }
+}
+
+function New-ExORequestHeaders {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [hashtable]$BaseHeaders
+    )
+
+    $headers = @{}
+    foreach ($key in $BaseHeaders.Keys) {
+        $headers[$key] = $BaseHeaders[$key]
+    }
+
+    # A unique id per request makes calls traceable in Exchange Online (and in support cases with Microsoft)
+    $headers['X-ResponseFormat'] = 'json'
+    $headers['return-client-request-id'] = 'true'
+    $headers['client-request-id'] = [guid]::NewGuid().ToString()
+
+    Write-Output $headers
+}
+
+function Invoke-ExOPageRequest {
+    <#
+        Executes one request (one page of a list) against the Exchange Admin API and returns the response.
+        Retries on 429, 5xx and timeouts. A cmdlet error inside an HTTP 200 response ('@adminapi.errors') stops the
+        script, so HelloID never receives a partial list.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]
+        $Uri,
+
+        [Parameter(Mandatory)]
+        [hashtable]
+        $Body,
+
+        [Parameter(Mandatory)]
+        [hashtable]
+        $Authorization,
+
+        [int]
+        $MaxRetries = 3
+    )
+
+    $cmdletName = $Body.CmdletInput.CmdletName
+    $target = if ($Body.CmdletInput.Parameters.Identity) { " for [$($Body.CmdletInput.Parameters.Identity)]" } else { '' }
+    $bodyBytes = [System.Text.Encoding]::UTF8.GetBytes((ConvertTo-Json $Body -Depth 10 -Compress))
+
+    for ($attempt = 0; ; $attempt++) {
+        $headers = New-ExORequestHeaders -BaseHeaders $Authorization
+        try {
+            $response = Invoke-RestMethod -Uri $Uri -Method Post -Headers $headers -ContentType 'application/json' -Body $bodyBytes -TimeoutSec 120
+            break
+        }
+        catch {
+            $statusCode = $null
+            if ($null -ne $_.Exception.Response) {
+                $statusCode = [int]$_.Exception.Response.StatusCode
+            }
+
+            $isRetryable = $statusCode -eq 429 -or $statusCode -ge 500 -or $_.Exception -is [System.Threading.Tasks.TaskCanceledException]
+            if ($attempt -ge $MaxRetries -or -not $isRetryable) {
+                throw
+            }
+
+            $delaySeconds = [int](2 * [System.Math]::Pow(2, $attempt))
+            Write-Warning "$($cmdletName)$($target) failed (client-request-id $($headers['client-request-id'])), retrying in $($delaySeconds) seconds. Error: $($_.Exception.Message)"
+            Start-Sleep -Seconds $delaySeconds
+        }
+    }
+
+    if ($response.'@adminapi.errors') {
+        throw "$($cmdletName)$($target) failed (client-request-id $($headers['client-request-id'])): $($response.'@adminapi.errors' -join ' | ')"
+    }
+
+    Write-Output $response
 }
 
 function Get-ExODistributionGroups {
@@ -166,33 +242,25 @@ function Get-ExODistributionGroups {
         [string]$TenantID
     )
 
+    # ExchangeObjectId instead of Guid: the Guid can change during a tenant relocation, the ExchangeObjectId not
+    $Uri = "https://outlook.office365.com/adminapi/beta/$TenantID/InvokeCommand?`$select=ExchangeObjectId,DisplayName,RecipientTypeDetails,IsDirSynced"
     $Body = @{
         CmdletInput = @{
             CmdletName = 'Get-DistributionGroup'
             Parameters = @{
-                ResultSize = 'Unlimited'
+                ResultSize  = 'Unlimited'
+                # Without ErrorAction Stop, cmdlet errors are returned inside an HTTP 200 response in '@adminapi.errors'
+                ErrorAction = 'Stop'
             }
         }
     }
 
-    $Uri = "https://outlook.office365.com/adminapi/beta/$TenantID/InvokeCommand?`$select=Guid,DisplayName,RecipientTypeDetails,IsDirSynced"
-
     do {
-        $Request = @{
-            Uri         = $Uri
-            Method      = 'Post'
-            Headers     = $Authorization
-            ContentType = 'application/json'
-            Body        = [System.Text.Encoding]::UTF8.GetBytes(
-                (ConvertTo-Json $Body -Depth 10 -Compress)
-            )
-            ErrorAction = 'Stop'
-        }
+        $Response = Invoke-ExOPageRequest -Uri $Uri -Body $Body -Authorization $Authorization
 
-        $Response = Invoke-RestMethod @Request
         $Response.Value |
-            Where-Object { $_.IsDirSynced -notin @($true, 'True') -and -not [string]::IsNullOrEmpty($_.Guid) } |
-            Select-Object Guid, DisplayName, RecipientTypeDetails
+            Where-Object { $_.IsDirSynced -notin @($true, 'True') -and -not [string]::IsNullOrEmpty($_.ExchangeObjectId) } |
+            Select-Object ExchangeObjectId, DisplayName, RecipientTypeDetails
 
         # A large result is returned in pages; the next page is requested with the same body
         $Uri = $Response.'@odata.nextLink'
@@ -215,8 +283,7 @@ try {
 
     Write-Information 'Successfully authenticated the Exchange Admin API'
 
-    # Use the same routing hint for every request, so all calls (including verification) are routed to the same backend.
-    # Format per Microsoft docs: APP:SystemMailbox{bb558c35-97f1-4cb9-8ff7-d53741dc928c}@<tenantIdOrOrganization>
+    # Routing hint for the Exchange Admin API, format per Microsoft docs: APP:SystemMailbox{bb558c35-97f1-4cb9-8ff7-d53741dc928c}@<tenantIdOrOrganization>
     $ExOAuthorization['X-AnchorMailbox'] = "APP:SystemMailbox{bb558c35-97f1-4cb9-8ff7-d53741dc928c}@$($ActionContext.Configuration.TenantID)"
 
     $actionMessage = 'retrieving Exchange Online groups'
@@ -239,7 +306,7 @@ try {
             @{
                 displayName    = $displayName
                 identification = @{
-                    Id = $_.Guid
+                    Id = $_.ExchangeObjectId
                 }
             }
         )

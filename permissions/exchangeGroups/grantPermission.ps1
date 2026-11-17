@@ -363,9 +363,11 @@ $deadline = [datetime]::UtcNow.AddSeconds(25)
 try {
     $actionMessage = 'validating account reference'
 
-    if ([string]::IsNullOrEmpty($ActionContext.References.Account)) {
+    $accountReference = [string]$ActionContext.References.Account
+    if ([string]::IsNullOrWhiteSpace($accountReference)) {
         throw "The account reference could not be found"
     }
+    $accountReference = $accountReference.Trim()
 
     $actionMessage = 'authenticating to the Exchange Admin API'
     $certificate = Get-MSEntraCertificate
@@ -379,20 +381,19 @@ try {
 
     Write-Information 'Successfully authenticated the Exchange Admin API'
 
-    # Use the same routing hint for every request, so all calls (including verification) are routed to the same backend.
-    # Format per Microsoft docs: APP:SystemMailbox{bb558c35-97f1-4cb9-8ff7-d53741dc928c}@<tenantIdOrOrganization>
+    # Routing hint for the Exchange Admin API, format per Microsoft docs: APP:SystemMailbox{bb558c35-97f1-4cb9-8ff7-d53741dc928c}@<tenantIdOrOrganization>
     $ExOAuthorization['X-AnchorMailbox'] = "APP:SystemMailbox{bb558c35-97f1-4cb9-8ff7-d53741dc928c}@$($ActionContext.Configuration.TenantID)"
 
-    $actionMessage = "granting Exchange Online group [$($ActionContext.PermissionDisplayName)] with id [$($ActionContext.References.Permission.Id)] to account [$($ActionContext.References.Account)]"
+    $actionMessage = "granting Exchange Online group [$($ActionContext.PermissionDisplayName)] with id [$($ActionContext.References.Permission.Id)] to account [$($accountReference)]"
 
     $alreadyMember = $false
 
-    if ($ActionContext.DryRun -eq $false) {
+    if ($ActionContext.DryRun -ne $true) {
         try {
             [void](Add-ExODistributionGroupMember -Authorization $ExOAuthorization `
                 -TenantID $ActionContext.Configuration.TenantID `
                 -Identity $ActionContext.References.Permission.Id `
-                -Member $ActionContext.References.Account `
+                -Member $accountReference `
                 -Deadline $deadline)
         }
         catch {
@@ -407,10 +408,10 @@ try {
         }
     }
     else {
-        Write-Information "DryRun: Would grant Exchange Online group $($ActionContext.References.Permission.Id) to $($ActionContext.References.Account)"
+        Write-Information "DryRun: Would grant Exchange Online group $($ActionContext.References.Permission.Id) to $($accountReference)"
     }
 
-    $auditMessage = "Grant permission [$($ActionContext.PermissionDisplayName)] with id [$($ActionContext.References.Permission.Id)] to account with account reference [$($ActionContext.References.Account)] was successful"
+    $auditMessage = "Grant permission [$($ActionContext.PermissionDisplayName)] with id [$($ActionContext.References.Permission.Id)] to account with account reference [$($accountReference)] was successful"
     if ($alreadyMember) {
         $auditMessage = "$($auditMessage) (the account was already a member)"
     }

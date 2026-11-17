@@ -38,15 +38,11 @@ function Get-MSEntraAccessToken {
     )
 
     try {
-        # Get the DER encoded bytes of the certificate
         $derBytes = $Certificate.RawData
-
-        # Compute the SHA-256 hash of the DER encoded bytes
         $sha256 = [System.Security.Cryptography.SHA256]::Create()
         $hashBytes = $sha256.ComputeHash($derBytes)
         $base64Thumbprint = [System.Convert]::ToBase64String($hashBytes).Replace('+', '-').Replace('/', '_').Replace('=', '')
 
-        # Create a JWT (JSON Web Token) header
         $header = @{
             'alg'      = 'RS256'
             'typ'      = 'JWT'
@@ -54,10 +50,8 @@ function Get-MSEntraAccessToken {
         } | ConvertTo-Json
         $base64Header = [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($header))
 
-        # Calculate the Unix timestamp (seconds since 1970-01-01T00:00:00Z) for 'exp', 'nbf' and 'iat'
         $currentUnixTimestamp = [Math]::Round(((Get-Date).ToUniversalTime() - ([DateTime]'1970-01-01T00:00:00Z').ToUniversalTime()).TotalSeconds)
 
-        # Create a JWT payload
         $payload = [ordered]@{
             'iss' = "$($ActionContext.Configuration.AppId)"
             'sub' = "$($ActionContext.Configuration.AppId)"
@@ -69,22 +63,18 @@ function Get-MSEntraAccessToken {
         } | ConvertTo-Json
         $base64Payload = [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($payload)).Replace('+', '-').Replace('/', '_').Replace('=', '')
 
-        # Extract the private key from the certificate
-        $rsaPrivate = $Certificate.PrivateKey
-        $rsa = [System.Security.Cryptography.RSACryptoServiceProvider]::new()
-        $rsa.ImportParameters($rsaPrivate.ExportParameters($true))
-
-        # Sign the JWT
-        $signatureInput = "$base64Header.$base64Payload"
-        $signature = $rsa.SignData([Text.Encoding]::UTF8.GetBytes($signatureInput), 'SHA256')
-        $base64Signature = [System.Convert]::ToBase64String($signature).Replace('+', '-').Replace('/', '_').Replace('=', '')
-
-        # Ensure the certificate has a private key
         if (-not $Certificate.HasPrivateKey -or -not $Certificate.PrivateKey) {
             throw 'The certificate does not have a private key.'
         }
 
-        # Create the JWT token
+        $rsaPrivate = $Certificate.PrivateKey
+        $rsa = [System.Security.Cryptography.RSACryptoServiceProvider]::new()
+        $rsa.ImportParameters($rsaPrivate.ExportParameters($true))
+
+        $signatureInput = "$base64Header.$base64Payload"
+        $signature = $rsa.SignData([Text.Encoding]::UTF8.GetBytes($signatureInput), 'SHA256')
+        $base64Signature = [System.Convert]::ToBase64String($signature).Replace('+', '-').Replace('/', '_').Replace('=', '')
+
         $jwtToken = "$($base64Header).$($base64Payload).$($base64Signature)"
 
         $createEntraAccessTokenBody = @{
@@ -151,7 +141,7 @@ function Resolve-MS-Entra-ExoError {
                 $httpErrorObj.FriendlyMessage = "$($errorDetailsObject.error.code): $($errorDetailsObject.error.message)"
             }
             elseif ($errorDetailsObject.error.details.message) {
-                $httpErrorObj.FriendlyMessage = "$($errorDetailsObject.error.details.code): $($errorDetailsObject.details.message)"
+                $httpErrorObj.FriendlyMessage = "$($errorDetailsObject.error.details.code): $($errorDetailsObject.error.details.message)"
             }
             else {
                 $httpErrorObj.FriendlyMessage = $httpErrorObj.ErrorDetails

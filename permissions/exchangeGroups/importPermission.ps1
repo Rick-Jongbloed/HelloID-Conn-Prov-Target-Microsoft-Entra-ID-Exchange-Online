@@ -112,32 +112,25 @@ function Get-ExODistributionGroups {
         [string]$TenantID
     )
 
+    # ExchangeObjectId instead of Guid: the Guid can change during a tenant relocation, the ExchangeObjectId not
+    $Uri = "https://outlook.office365.com/adminapi/beta/$TenantID/InvokeCommand?`$select=ExchangeObjectId,DisplayName,RecipientTypeDetails,Description,IsDirSynced"
     $Body = @{
         CmdletInput = @{
             CmdletName = 'Get-DistributionGroup'
             Parameters = @{
-                ResultSize = 'Unlimited'
+                ResultSize  = 'Unlimited'
+                # Without ErrorAction Stop, cmdlet errors are returned inside an HTTP 200 response in '@adminapi.errors'
+                ErrorAction = 'Stop'
             }
         }
     }
 
-    $Uri = "https://outlook.office365.com/adminapi/beta/$TenantID/InvokeCommand?`$select=Guid,DisplayName,RecipientTypeDetails,Description,IsDirSynced"
-
     do {
-        $Request = @{
-            Uri         = $Uri
-            Method      = 'Post'
-            Headers     = $Authorization
-            ContentType = 'application/json'
-            Body        = [System.Text.Encoding]::UTF8.GetBytes(
-                (ConvertTo-Json $Body -Depth 10 -Compress)
-            )
-        }
+        $Response = Invoke-ExOPageRequest -Uri $Uri -Body $Body -Authorization $Authorization
 
-        $Response = Invoke-RestMethod @Request
         $Response.Value |
-            Where-Object { $_.IsDirSynced -notin @($true, 'True') -and -not [string]::IsNullOrEmpty($_.Guid) } |
-            Select-Object Guid, DisplayName, RecipientTypeDetails, Description
+            Where-Object { $_.IsDirSynced -notin @($true, 'True') -and -not [string]::IsNullOrEmpty($_.ExchangeObjectId) } |
+            Select-Object ExchangeObjectId, DisplayName, RecipientTypeDetails, Description
 
         # A large result is returned in pages; the next page is requested with the same body
         $Uri = $Response.'@odata.nextLink'
@@ -162,6 +155,64 @@ function New-ExORequestHeaders {
     $headers['client-request-id'] = [guid]::NewGuid().ToString()
 
     Write-Output $headers
+}
+
+function Invoke-ExOPageRequest {
+    <#
+        Executes one request (one page of a list) against the Exchange Admin API and returns the response.
+        Retries on 429, 5xx and timeouts. A cmdlet error inside an HTTP 200 response ('@adminapi.errors') stops the
+        script, so HelloID never receives a partial list.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]
+        $Uri,
+
+        [Parameter(Mandatory)]
+        [hashtable]
+        $Body,
+
+        [Parameter(Mandatory)]
+        [hashtable]
+        $Authorization,
+
+        [int]
+        $MaxRetries = 3
+    )
+
+    $cmdletName = $Body.CmdletInput.CmdletName
+    $target = if ($Body.CmdletInput.Parameters.Identity) { " for [$($Body.CmdletInput.Parameters.Identity)]" } else { '' }
+    $bodyBytes = [System.Text.Encoding]::UTF8.GetBytes((ConvertTo-Json $Body -Depth 10 -Compress))
+
+    for ($attempt = 0; ; $attempt++) {
+        $headers = New-ExORequestHeaders -BaseHeaders $Authorization
+        try {
+            $response = Invoke-RestMethod -Uri $Uri -Method Post -Headers $headers -ContentType 'application/json' -Body $bodyBytes -TimeoutSec 120
+            break
+        }
+        catch {
+            $statusCode = $null
+            if ($null -ne $_.Exception.Response) {
+                $statusCode = [int]$_.Exception.Response.StatusCode
+            }
+
+            $isRetryable = $statusCode -eq 429 -or $statusCode -ge 500 -or $_.Exception -is [System.Threading.Tasks.TaskCanceledException]
+            if ($attempt -ge $MaxRetries -or -not $isRetryable) {
+                throw
+            }
+
+            $delaySeconds = [int](2 * [System.Math]::Pow(2, $attempt))
+            Write-Warning "$($cmdletName)$($target) failed (client-request-id $($headers['client-request-id'])), retrying in $($delaySeconds) seconds. Error: $($_.Exception.Message)"
+            Start-Sleep -Seconds $delaySeconds
+        }
+    }
+
+    if ($response.'@adminapi.errors') {
+        throw "$($cmdletName)$($target) failed (client-request-id $($headers['client-request-id'])): $($response.'@adminapi.errors' -join ' | ')"
+    }
+
+    Write-Output $response
 }
 
 function Get-ExONextPages {
@@ -189,39 +240,11 @@ function Get-ExONextPages {
 
     $parameters = $Request.Parameters.Clone()
     $parameters['ErrorAction'] = 'Stop'
-    $body = [System.Text.Encoding]::UTF8.GetBytes(
-        (ConvertTo-Json @{ CmdletInput = @{ CmdletName = $Request.CmdletName; Parameters = $parameters } } -Depth 10 -Compress)
-    )
+    $body = @{ CmdletInput = @{ CmdletName = $Request.CmdletName; Parameters = $parameters } }
 
     $uri = $NextLink
     while (-not [string]::IsNullOrEmpty($uri)) {
-        for ($attempt = 0; ; $attempt++) {
-            $headers = New-ExORequestHeaders -BaseHeaders $Authorization
-            try {
-                $response = Invoke-RestMethod -Uri $uri -Method Post -Headers $headers -ContentType 'application/json' -Body $body -TimeoutSec 120
-                break
-            }
-            catch {
-                $statusCode = $null
-                if ($null -ne $_.Exception.Response) {
-                    $statusCode = [int]$_.Exception.Response.StatusCode
-                }
-
-                $isRetryable = $statusCode -eq 429 -or $statusCode -ge 500 -or $_.Exception -is [System.Threading.Tasks.TaskCanceledException]
-                if ($attempt -ge $MaxRetries -or -not $isRetryable) {
-                    throw
-                }
-
-                $delaySeconds = [int](2 * [System.Math]::Pow(2, $attempt))
-                Write-Warning "Next page of $($Request.CmdletName) for [$($Request.Parameters.Identity)] failed (client-request-id $($headers['client-request-id'])), retrying in $($delaySeconds) seconds. Error: $($_.Exception.Message)"
-                Start-Sleep -Seconds $delaySeconds
-            }
-        }
-
-        if ($response.'@adminapi.errors') {
-            throw "$($Request.CmdletName) for [$($Request.Parameters.Identity)] failed on a next page (client-request-id $($headers['client-request-id'])): $($response.'@adminapi.errors' -join ' | ')"
-        }
-
+        $response = Invoke-ExOPageRequest -Uri $uri -Body $body -Authorization $Authorization -MaxRetries $MaxRetries
         foreach ($item in @($response.value)) {
             if ($null -ne $item) {
                 Write-Output $item
@@ -458,8 +481,7 @@ try {
 
     $tenantId = $ActionContext.Configuration.TenantID
 
-    # Use the same routing hint for every request, so all calls (including verification) are routed to the same backend.
-    # Format per Microsoft docs: APP:SystemMailbox{bb558c35-97f1-4cb9-8ff7-d53741dc928c}@<tenantIdOrOrganization>
+    # Routing hint for the Exchange Admin API, format per Microsoft docs: APP:SystemMailbox{bb558c35-97f1-4cb9-8ff7-d53741dc928c}@<tenantIdOrOrganization>
     $ExOAuthorization['X-AnchorMailbox'] = "APP:SystemMailbox{bb558c35-97f1-4cb9-8ff7-d53741dc928c}@$($ActionContext.Configuration.TenantID)"
 
     $actionMessage = 'retrieving Exchange Online groups'
@@ -476,7 +498,7 @@ try {
     foreach ($group in $Groups) {
         $memberRequests.Add(@{
                 CmdletName = 'Get-DistributionGroupMember'
-                Parameters = @{ Identity = $group.Guid; ResultSize = 'Unlimited' }
+                Parameters = @{ Identity = $group.ExchangeObjectId; ResultSize = 'Unlimited' }
                 Select     = 'Guid,ExternalDirectoryObjectId,RecipientTypeDetails'
             })
     }
@@ -509,7 +531,7 @@ try {
 
         $permission = @{
             PermissionReference = @{
-                Id = $group.Guid
+                Id = $group.ExchangeObjectId
             }
             Description = $description
             DisplayName = $displayName
@@ -518,8 +540,10 @@ try {
         $numberOfAccounts = $accountReferences.Count
         $batchSize = 500
         for ($i = 0; $i -lt $numberOfAccounts; $i += $batchSize) {
-            $permission.AccountReferences = $accountReferences[$i..([Math]::Min($i + $batchSize - 1, $numberOfAccounts - 1))]
-            Write-Output $permission
+            # A new object per chunk: the same hashtable written twice would only carry the last chunk
+            $chunk = $permission.Clone()
+            $chunk.AccountReferences = $accountReferences[$i..([Math]::Min($i + $batchSize - 1, $numberOfAccounts - 1))]
+            Write-Output $chunk
         }
     }
 

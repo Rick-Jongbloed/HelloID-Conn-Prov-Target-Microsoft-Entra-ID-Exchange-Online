@@ -133,7 +133,6 @@ function Resolve-MS-Entra-ExoError {
                     }
                 }
             }
-
             $errorDetailsObject = $httpErrorObj.ErrorDetails
             if ($errorDetailsObject.error_description) {
                 $httpErrorObj.FriendlyMessage = $errorDetailsObject.error_description
@@ -142,7 +141,7 @@ function Resolve-MS-Entra-ExoError {
                 $httpErrorObj.FriendlyMessage = "$($errorDetailsObject.error.code): $($errorDetailsObject.error.message)"
             }
             elseif ($errorDetailsObject.error.details.message) {
-                $httpErrorObj.FriendlyMessage = "$($errorDetailsObject.error.details.code): $($errorDetailsObject.details.message)"
+                $httpErrorObj.FriendlyMessage = "$($errorDetailsObject.error.details.code): $($errorDetailsObject.error.details.message)"
             }
             else {
                 $httpErrorObj.FriendlyMessage = $httpErrorObj.ErrorDetails
@@ -151,9 +150,86 @@ function Resolve-MS-Entra-ExoError {
         catch {
             $httpErrorObj.FriendlyMessage = $httpErrorObj.ErrorDetails
         }
-
         Write-Output $httpErrorObj
     }
+}
+
+function New-ExORequestHeaders {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [hashtable]$BaseHeaders
+    )
+
+    $headers = @{}
+    foreach ($key in $BaseHeaders.Keys) {
+        $headers[$key] = $BaseHeaders[$key]
+    }
+
+    # A unique id per request makes calls traceable in Exchange Online (and in support cases with Microsoft)
+    $headers['X-ResponseFormat'] = 'json'
+    $headers['return-client-request-id'] = 'true'
+    $headers['client-request-id'] = [guid]::NewGuid().ToString()
+
+    Write-Output $headers
+}
+
+function Invoke-ExOPageRequest {
+    <#
+        Executes one request (one page of a list) against the Exchange Admin API and returns the response.
+        Retries on 429, 5xx and timeouts. A cmdlet error inside an HTTP 200 response ('@adminapi.errors') stops the
+        script, so HelloID never receives a partial list.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]
+        $Uri,
+
+        [Parameter(Mandatory)]
+        [hashtable]
+        $Body,
+
+        [Parameter(Mandatory)]
+        [hashtable]
+        $Authorization,
+
+        [int]
+        $MaxRetries = 3
+    )
+
+    $cmdletName = $Body.CmdletInput.CmdletName
+    $target = if ($Body.CmdletInput.Parameters.Identity) { " for [$($Body.CmdletInput.Parameters.Identity)]" } else { '' }
+    $bodyBytes = [System.Text.Encoding]::UTF8.GetBytes((ConvertTo-Json $Body -Depth 10 -Compress))
+
+    for ($attempt = 0; ; $attempt++) {
+        $headers = New-ExORequestHeaders -BaseHeaders $Authorization
+        try {
+            $response = Invoke-RestMethod -Uri $Uri -Method Post -Headers $headers -ContentType 'application/json' -Body $bodyBytes -TimeoutSec 120
+            break
+        }
+        catch {
+            $statusCode = $null
+            if ($null -ne $_.Exception.Response) {
+                $statusCode = [int]$_.Exception.Response.StatusCode
+            }
+
+            $isRetryable = $statusCode -eq 429 -or $statusCode -ge 500 -or $_.Exception -is [System.Threading.Tasks.TaskCanceledException]
+            if ($attempt -ge $MaxRetries -or -not $isRetryable) {
+                throw
+            }
+
+            $delaySeconds = [int](2 * [System.Math]::Pow(2, $attempt))
+            Write-Warning "$($cmdletName)$($target) failed (client-request-id $($headers['client-request-id'])), retrying in $($delaySeconds) seconds. Error: $($_.Exception.Message)"
+            Start-Sleep -Seconds $delaySeconds
+        }
+    }
+
+    if ($response.'@adminapi.errors') {
+        throw "$($cmdletName)$($target) failed (client-request-id $($headers['client-request-id'])): $($response.'@adminapi.errors' -join ' | ')"
+    }
+
+    Write-Output $response
 }
 
 function Get-ExOSharedMailboxes {
@@ -163,42 +239,30 @@ function Get-ExOSharedMailboxes {
         [hashtable]$Authorization,
 
         [Parameter(Mandatory)]
-        [string]$TenantID,
-
-        [int]$ResultSize = 500
+        [string]$TenantID
     )
 
+    # RecipientTypeDetails filters on the server; ResultSize Unlimited plus @odata.nextLink returns all mailboxes
     $Uri = "https://outlook.office365.com/adminapi/v2.0/$TenantID/Mailbox?`$select=ExternalDirectoryObjectId,DisplayName,RecipientTypeDetails"
-
-    do {
-        $Body = @{
-            CmdletInput = @{
-                CmdletName = 'Get-Mailbox'
-                Parameters = @{
-                    ResultSize = $ResultSize
-                }
+    $Body = @{
+        CmdletInput = @{
+            CmdletName = 'Get-Mailbox'
+            Parameters = @{
+                RecipientTypeDetails = 'SharedMailbox'
+                ResultSize           = 'Unlimited'
             }
         }
+    }
 
-        $Request = @{
-            Uri         = $Uri
-            Method      = 'Post'
-            Headers     = $Authorization
-            ContentType = 'application/json'
-            Body        = [System.Text.Encoding]::UTF8.GetBytes(
-                (ConvertTo-Json $Body -Depth 10 -Compress)
-            )
-            ErrorAction = 'Stop'
-        }
-
-        $Response = Invoke-RestMethod @Request
+    do {
+        $Response = Invoke-ExOPageRequest -Uri $Uri -Body $Body -Authorization $Authorization
 
         $Response.Value |
             Where-Object { $_.RecipientTypeDetails -eq 'SharedMailbox' -and -not [string]::IsNullOrEmpty($_.ExternalDirectoryObjectId) } |
             Select-Object ExternalDirectoryObjectId, DisplayName
 
+        # A large result is returned in pages; the next page is requested with the same body
         $Uri = $Response.'@odata.nextLink'
-
     } while ($Uri)
 }
 #endregion Functions
@@ -218,8 +282,7 @@ try {
 
     Write-Information 'Successfully authenticated the Exchange Admin API'
 
-    # Use the same routing hint for every request, so all calls (including verification) are routed to the same backend.
-    # Format per Microsoft docs: APP:SystemMailbox{bb558c35-97f1-4cb9-8ff7-d53741dc928c}@<tenantIdOrOrganization>
+    # Routing hint for the Exchange Admin API, format per Microsoft docs: APP:SystemMailbox{bb558c35-97f1-4cb9-8ff7-d53741dc928c}@<tenantIdOrOrganization>
     $ExOAuthorization['X-AnchorMailbox'] = "APP:SystemMailbox{bb558c35-97f1-4cb9-8ff7-d53741dc928c}@$($ActionContext.Configuration.TenantID)"
 
     $actionMessage = 'retrieving shared mailboxes'

@@ -38,15 +38,11 @@ function Get-MSEntraAccessToken {
     )
 
     try {
-        # Get the DER encoded bytes of the certificate
         $derBytes = $Certificate.RawData
-
-        # Compute the SHA-256 hash of the DER encoded bytes
         $sha256 = [System.Security.Cryptography.SHA256]::Create()
         $hashBytes = $sha256.ComputeHash($derBytes)
         $base64Thumbprint = [System.Convert]::ToBase64String($hashBytes).Replace('+', '-').Replace('/', '_').Replace('=', '')
 
-        # Create a JWT (JSON Web Token) header
         $header = @{
             'alg'      = 'RS256'
             'typ'      = 'JWT'
@@ -54,10 +50,8 @@ function Get-MSEntraAccessToken {
         } | ConvertTo-Json
         $base64Header = [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($header))
 
-        # Calculate the Unix timestamp (seconds since 1970-01-01T00:00:00Z) for 'exp', 'nbf' and 'iat'
         $currentUnixTimestamp = [Math]::Round(((Get-Date).ToUniversalTime() - ([DateTime]'1970-01-01T00:00:00Z').ToUniversalTime()).TotalSeconds)
 
-        # Create a JWT payload
         $payload = [ordered]@{
             'iss' = "$($ActionContext.Configuration.AppId)"
             'sub' = "$($ActionContext.Configuration.AppId)"
@@ -69,22 +63,18 @@ function Get-MSEntraAccessToken {
         } | ConvertTo-Json
         $base64Payload = [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($payload)).Replace('+', '-').Replace('/', '_').Replace('=', '')
 
-        # Extract the private key from the certificate
-        $rsaPrivate = $Certificate.PrivateKey
-        $rsa = [System.Security.Cryptography.RSACryptoServiceProvider]::new()
-        $rsa.ImportParameters($rsaPrivate.ExportParameters($true))
-
-        # Sign the JWT
-        $signatureInput = "$base64Header.$base64Payload"
-        $signature = $rsa.SignData([Text.Encoding]::UTF8.GetBytes($signatureInput), 'SHA256')
-        $base64Signature = [System.Convert]::ToBase64String($signature).Replace('+', '-').Replace('/', '_').Replace('=', '')
-
-        # Ensure the certificate has a private key
         if (-not $Certificate.HasPrivateKey -or -not $Certificate.PrivateKey) {
             throw 'The certificate does not have a private key.'
         }
 
-        # Create the JWT token
+        $rsaPrivate = $Certificate.PrivateKey
+        $rsa = [System.Security.Cryptography.RSACryptoServiceProvider]::new()
+        $rsa.ImportParameters($rsaPrivate.ExportParameters($true))
+
+        $signatureInput = "$base64Header.$base64Payload"
+        $signature = $rsa.SignData([Text.Encoding]::UTF8.GetBytes($signatureInput), 'SHA256')
+        $base64Signature = [System.Convert]::ToBase64String($signature).Replace('+', '-').Replace('/', '_').Replace('=', '')
+
         $jwtToken = "$($base64Header).$($base64Payload).$($base64Signature)"
 
         $createEntraAccessTokenBody = @{
@@ -119,45 +109,30 @@ function Get-ExOSharedMailboxes {
         [hashtable]$Authorization,
 
         [Parameter(Mandatory)]
-        [string]$TenantID,
-
-        [int]$ResultSize = 500
+        [string]$TenantID
     )
 
+    # RecipientTypeDetails filters on the server; ResultSize Unlimited plus @odata.nextLink returns all mailboxes
     $Uri = "https://outlook.office365.com/adminapi/v2.0/$TenantID/Mailbox?`$select=ExternalDirectoryObjectId,DisplayName,UserPrincipalName,RecipientTypeDetails,GrantSendOnBehalfTo,Identity"
-
-    do {
-        $Body = @{
-            CmdletInput = @{
-                CmdletName = 'Get-Mailbox'
-                Parameters = @{
-                    ResultSize = $ResultSize
-                }
+    $Body = @{
+        CmdletInput = @{
+            CmdletName = 'Get-Mailbox'
+            Parameters = @{
+                RecipientTypeDetails = 'SharedMailbox'
+                ResultSize           = 'Unlimited'
             }
         }
+    }
 
-        $Request = @{
-            Uri         = $Uri
-            Method      = 'Post'
-            Headers     = $Authorization
-            ContentType = 'application/json'
-            Body        = [System.Text.Encoding]::UTF8.GetBytes(
-                (ConvertTo-Json $Body -Depth 10 -Compress)
-            )
-        }
-
-        $Response = Invoke-RestMethod @Request
+    do {
+        $Response = Invoke-ExOPageRequest -Uri $Uri -Body $Body -Authorization $Authorization
 
         $Response.Value |
-            Where-Object RecipientTypeDetails -eq 'SharedMailbox' |
-            Select-Object ExternalDirectoryObjectId,
-            DisplayName,
-            UserPrincipalName,
-            GrantSendOnBehalfTo,
-            Identity
+            Where-Object { $_.RecipientTypeDetails -eq 'SharedMailbox' } |
+            Select-Object ExternalDirectoryObjectId, DisplayName, UserPrincipalName, GrantSendOnBehalfTo, Identity
 
+        # A large result is returned in pages; the next page is requested with the same body
         $Uri = $Response.'@odata.nextLink'
-
     } while ($Uri)
 }
 
@@ -168,46 +143,30 @@ function Get-ExOUserMailboxes {
         [hashtable]$Authorization,
 
         [Parameter(Mandatory)]
-        [string]$TenantID,
-
-        [int]$ResultSize = 500
+        [string]$TenantID
     )
 
+    # RecipientTypeDetails filters on the server; ResultSize Unlimited plus @odata.nextLink returns all mailboxes
     $Uri = "https://outlook.office365.com/adminapi/v2.0/$TenantID/Mailbox?`$select=ExternalDirectoryObjectId,UserPrincipalName,RecipientTypeDetails,Identity"
-
-    do {
-        $Body = @{
-            CmdletInput = @{
-                CmdletName = 'Get-Mailbox'
-                Parameters = @{
-                    ResultSize = $ResultSize
-                }
+    $Body = @{
+        CmdletInput = @{
+            CmdletName = 'Get-Mailbox'
+            Parameters = @{
+                RecipientTypeDetails = 'UserMailbox'
+                ResultSize           = 'Unlimited'
             }
         }
+    }
 
-        $Request = @{
-            Uri         = $Uri
-            Method      = 'Post'
-            Headers     = $Authorization
-            ContentType = 'application/json'
-            Body        = [System.Text.Encoding]::UTF8.GetBytes(
-                (ConvertTo-Json $Body -Depth 10 -Compress)
-            )
-        }
-
-        $Response = Invoke-RestMethod @Request
+    do {
+        $Response = Invoke-ExOPageRequest -Uri $Uri -Body $Body -Authorization $Authorization
 
         $Response.Value |
-            Where-Object RecipientTypeDetails -eq 'UserMailbox' |
-            Select-Object @{
-                Name='ExternalDirectoryObjectId'
-                Expression={$_.ExternalDirectoryObjectId}
-            },
-            UserPrincipalName,
-            Identity
+            Where-Object { $_.RecipientTypeDetails -eq 'UserMailbox' } |
+            Select-Object ExternalDirectoryObjectId, UserPrincipalName, Identity
 
+        # A large result is returned in pages; the next page is requested with the same body
         $Uri = $Response.'@odata.nextLink'
-
     } while ($Uri)
 }
 
@@ -229,6 +188,64 @@ function New-ExORequestHeaders {
     $headers['client-request-id'] = [guid]::NewGuid().ToString()
 
     Write-Output $headers
+}
+
+function Invoke-ExOPageRequest {
+    <#
+        Executes one request (one page of a list) against the Exchange Admin API and returns the response.
+        Retries on 429, 5xx and timeouts. A cmdlet error inside an HTTP 200 response ('@adminapi.errors') stops the
+        script, so HelloID never receives a partial list.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]
+        $Uri,
+
+        [Parameter(Mandatory)]
+        [hashtable]
+        $Body,
+
+        [Parameter(Mandatory)]
+        [hashtable]
+        $Authorization,
+
+        [int]
+        $MaxRetries = 3
+    )
+
+    $cmdletName = $Body.CmdletInput.CmdletName
+    $target = if ($Body.CmdletInput.Parameters.Identity) { " for [$($Body.CmdletInput.Parameters.Identity)]" } else { '' }
+    $bodyBytes = [System.Text.Encoding]::UTF8.GetBytes((ConvertTo-Json $Body -Depth 10 -Compress))
+
+    for ($attempt = 0; ; $attempt++) {
+        $headers = New-ExORequestHeaders -BaseHeaders $Authorization
+        try {
+            $response = Invoke-RestMethod -Uri $Uri -Method Post -Headers $headers -ContentType 'application/json' -Body $bodyBytes -TimeoutSec 120
+            break
+        }
+        catch {
+            $statusCode = $null
+            if ($null -ne $_.Exception.Response) {
+                $statusCode = [int]$_.Exception.Response.StatusCode
+            }
+
+            $isRetryable = $statusCode -eq 429 -or $statusCode -ge 500 -or $_.Exception -is [System.Threading.Tasks.TaskCanceledException]
+            if ($attempt -ge $MaxRetries -or -not $isRetryable) {
+                throw
+            }
+
+            $delaySeconds = [int](2 * [System.Math]::Pow(2, $attempt))
+            Write-Warning "$($cmdletName)$($target) failed (client-request-id $($headers['client-request-id'])), retrying in $($delaySeconds) seconds. Error: $($_.Exception.Message)"
+            Start-Sleep -Seconds $delaySeconds
+        }
+    }
+
+    if ($response.'@adminapi.errors') {
+        throw "$($cmdletName)$($target) failed (client-request-id $($headers['client-request-id'])): $($response.'@adminapi.errors' -join ' | ')"
+    }
+
+    Write-Output $response
 }
 
 function Get-ExONextPages {
@@ -256,39 +273,11 @@ function Get-ExONextPages {
 
     $parameters = $Request.Parameters.Clone()
     $parameters['ErrorAction'] = 'Stop'
-    $body = [System.Text.Encoding]::UTF8.GetBytes(
-        (ConvertTo-Json @{ CmdletInput = @{ CmdletName = $Request.CmdletName; Parameters = $parameters } } -Depth 10 -Compress)
-    )
+    $body = @{ CmdletInput = @{ CmdletName = $Request.CmdletName; Parameters = $parameters } }
 
     $uri = $NextLink
     while (-not [string]::IsNullOrEmpty($uri)) {
-        for ($attempt = 0; ; $attempt++) {
-            $headers = New-ExORequestHeaders -BaseHeaders $Authorization
-            try {
-                $response = Invoke-RestMethod -Uri $uri -Method Post -Headers $headers -ContentType 'application/json' -Body $body -TimeoutSec 120
-                break
-            }
-            catch {
-                $statusCode = $null
-                if ($null -ne $_.Exception.Response) {
-                    $statusCode = [int]$_.Exception.Response.StatusCode
-                }
-
-                $isRetryable = $statusCode -eq 429 -or $statusCode -ge 500 -or $_.Exception -is [System.Threading.Tasks.TaskCanceledException]
-                if ($attempt -ge $MaxRetries -or -not $isRetryable) {
-                    throw
-                }
-
-                $delaySeconds = [int](2 * [System.Math]::Pow(2, $attempt))
-                Write-Warning "Next page of $($Request.CmdletName) for [$($Request.Parameters.Identity)] failed (client-request-id $($headers['client-request-id'])), retrying in $($delaySeconds) seconds. Error: $($_.Exception.Message)"
-                Start-Sleep -Seconds $delaySeconds
-            }
-        }
-
-        if ($response.'@adminapi.errors') {
-            throw "$($Request.CmdletName) for [$($Request.Parameters.Identity)] failed on a next page (client-request-id $($headers['client-request-id'])): $($response.'@adminapi.errors' -join ' | ')"
-        }
-
+        $response = Invoke-ExOPageRequest -Uri $uri -Body $body -Authorization $Authorization -MaxRetries $MaxRetries
         foreach ($item in @($response.value)) {
             if ($null -ne $item) {
                 Write-Output $item
@@ -494,7 +483,7 @@ function Resolve-MS-Entra-ExoError {
                 $httpErrorObj.FriendlyMessage = "$($errorDetailsObject.error.code): $($errorDetailsObject.error.message)"
             }
             elseif ($errorDetailsObject.error.details.message) {
-                $httpErrorObj.FriendlyMessage = "$($errorDetailsObject.error.details.code): $($errorDetailsObject.details.message)"
+                $httpErrorObj.FriendlyMessage = "$($errorDetailsObject.error.details.code): $($errorDetailsObject.error.details.message)"
             }
             else {
                 $httpErrorObj.FriendlyMessage = $httpErrorObj.ErrorDetails
@@ -523,8 +512,7 @@ try {
 
     $tenantId = $ActionContext.Configuration.TenantID
 
-    # Use the same routing hint for every request, so all calls (including verification) are routed to the same backend.
-    # Format per Microsoft docs: APP:SystemMailbox{bb558c35-97f1-4cb9-8ff7-d53741dc928c}@<tenantIdOrOrganization>
+    # Routing hint for the Exchange Admin API, format per Microsoft docs: APP:SystemMailbox{bb558c35-97f1-4cb9-8ff7-d53741dc928c}@<tenantIdOrOrganization>
     $ExOAuthorization['X-AnchorMailbox'] = "APP:SystemMailbox{bb558c35-97f1-4cb9-8ff7-d53741dc928c}@$($ActionContext.Configuration.TenantID)"
 
     $actionMessage = 'retrieving shared mailboxes'
@@ -603,8 +591,10 @@ try {
         $numberOfAccounts = $fullAccessUsers.Count
         $batchSize = 500
         for ($i = 0; $i -lt $numberOfAccounts; $i += $batchSize) {
-            $permission.AccountReferences = $fullAccessUsers[$i..([Math]::Min($i + $batchSize - 1, $numberOfAccounts - 1))]
-            Write-Output $permission
+            # A new object per chunk: the same hashtable written twice would only carry the last chunk
+            $chunk = $permission.Clone()
+            $chunk.AccountReferences = $fullAccessUsers[$i..([Math]::Min($i + $batchSize - 1, $numberOfAccounts - 1))]
+            Write-Output $chunk
         }
 
         # Send As
@@ -630,8 +620,10 @@ try {
         $numberOfAccounts = $sendAsUsers.Count
         $batchSize = 500
         for ($i = 0; $i -lt $numberOfAccounts; $i += $batchSize) {
-            $permission.AccountReferences = $sendAsUsers[$i..([Math]::Min($i + $batchSize - 1, $numberOfAccounts - 1))]
-            Write-Output $permission
+            # A new object per chunk: the same hashtable written twice would only carry the last chunk
+            $chunk = $permission.Clone()
+            $chunk.AccountReferences = $sendAsUsers[$i..([Math]::Min($i + $batchSize - 1, $numberOfAccounts - 1))]
+            Write-Output $chunk
         }
 
         # Send On Behalf
@@ -666,8 +658,10 @@ try {
         $numberOfAccounts = $sendOnBehalfUsers.Count
         $batchSize = 500
         for ($i = 0; $i -lt $numberOfAccounts; $i += $batchSize) {
-            $permission.AccountReferences = $sendOnBehalfUsers[$i..([Math]::Min($i + $batchSize - 1, $numberOfAccounts - 1))]
-            Write-Output $permission
+            # A new object per chunk: the same hashtable written twice would only carry the last chunk
+            $chunk = $permission.Clone()
+            $chunk.AccountReferences = $sendOnBehalfUsers[$i..([Math]::Min($i + $batchSize - 1, $numberOfAccounts - 1))]
+            Write-Output $chunk
         }
     }
 }

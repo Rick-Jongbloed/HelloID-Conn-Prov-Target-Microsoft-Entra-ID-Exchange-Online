@@ -363,9 +363,11 @@ $deadline = [datetime]::UtcNow.AddSeconds(25)
 try {
     $actionMessage = 'validating account reference'
 
-    if ([string]::IsNullOrEmpty($ActionContext.References.Account)) {
+    $accountReference = [string]$ActionContext.References.Account
+    if ([string]::IsNullOrWhiteSpace($accountReference)) {
         throw "The account reference could not be found"
     }
+    $accountReference = $accountReference.Trim()
 
     $actionMessage = 'authenticating to the Exchange Admin API'
     $certificate = Get-MSEntraCertificate
@@ -379,26 +381,25 @@ try {
 
     Write-Information 'Successfully authenticated the Exchange Admin API'
 
-    # Use the same routing hint for every request, so all calls (including verification) are routed to the same backend.
-    # Format per Microsoft docs: APP:SystemMailbox{bb558c35-97f1-4cb9-8ff7-d53741dc928c}@<tenantIdOrOrganization>
+    # Routing hint for the Exchange Admin API, format per Microsoft docs: APP:SystemMailbox{bb558c35-97f1-4cb9-8ff7-d53741dc928c}@<tenantIdOrOrganization>
     $ExOAuthorization['X-AnchorMailbox'] = "APP:SystemMailbox{bb558c35-97f1-4cb9-8ff7-d53741dc928c}@$($ActionContext.Configuration.TenantID)"
 
-    $actionMessage = "revoking Exchange Online group [$($ActionContext.PermissionDisplayName)] with id [$($ActionContext.References.Permission.Id)] from account [$($ActionContext.References.Account)]"
+    $actionMessage = "revoking Exchange Online group [$($ActionContext.PermissionDisplayName)] with id [$($ActionContext.References.Permission.Id)] from account [$($accountReference)]"
 
-    if ($ActionContext.DryRun -eq $false) {
+    if ($ActionContext.DryRun -ne $true) {
         [void](Remove-ExODistributionGroupMember -Authorization $ExOAuthorization `
             -TenantID $ActionContext.Configuration.TenantID `
             -Identity $ActionContext.References.Permission.Id `
-            -Member $ActionContext.References.Account `
+            -Member $accountReference `
             -Deadline $deadline)
     }
     else {
-        Write-Information "DryRun: Would revoke Exchange Online group $($ActionContext.References.Permission.Id) from $($ActionContext.References.Account)"
+        Write-Information "DryRun: Would revoke Exchange Online group $($ActionContext.References.Permission.Id) from $($accountReference)"
     }
 
     $OutputContext.AuditLogs.Add(
         [PSCustomObject]@{
-            Message = "Revoke permission [$($ActionContext.PermissionDisplayName)] with id [$($ActionContext.References.Permission.Id)] from account with account reference [$($ActionContext.References.Account)] was successful"
+            Message = "Revoke permission [$($ActionContext.PermissionDisplayName)] with id [$($ActionContext.References.Permission.Id)] from account with account reference [$($accountReference)] was successful"
             IsError = $false
         }
     )
@@ -418,7 +419,7 @@ catch {
 
     # The account is no longer a member, or the group or account no longer exists
     if ($errorText -match 'Request_ResourceNotFound|ManagementObjectNotFoundException|MemberNotFoundException|not found|isn''t a member') {
-        $auditMessage = "Skipped revoking permission [$($ActionContext.PermissionDisplayName)] with id [$($ActionContext.References.Permission.Id)] from account with account reference [$($ActionContext.References.Account)]. Reason: User is already no longer a member or the permission no longer exists."
+        $auditMessage = "Skipped revoking permission [$($ActionContext.PermissionDisplayName)] with id [$($ActionContext.References.Permission.Id)] from account with account reference [$($accountReference)]. Reason: User is already no longer a member or the permission no longer exists."
         $auditError = $false
         $OutputContext.Success = $true
     }
