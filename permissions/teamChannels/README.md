@@ -16,16 +16,15 @@ The following features are available:
 
 Governance reconciliation is supported for permissions only. Accounts are dependent on the use of the Entra ID connector
 
-# HelloID-specific configuration
+## Required permissions
 
-Once you have completed the Microsoft setup and followed their best practices, configure the following HelloID-specific requirements.
+API permissions (Microsoft Graph, application):
 
-- **API Permissions** (Application permissions):
-  - `User.ReadWrite.All`
-  - `GroupMember.ReadWrite.All`
-  - `Team.ReadBasic.All`
-  - `TeamMember.ReadWrite.All`
-  - `ChannelMember.ReadWrite.All`
+| Permission                    | Used for                                                          |
+| ----------------------------- | ----------------------------------------------------------------- |
+| `GroupMember.Read.All`        | Listing the teams (`/groups` filtered on `resourceProvisioningOptions`) |
+| `Channel.ReadBasic.All`       | Listing the private and shared channels of the teams              |
+| `ChannelMember.ReadWrite.All` | Listing, adding and removing channel members                      |
 
 ## Remarks
 

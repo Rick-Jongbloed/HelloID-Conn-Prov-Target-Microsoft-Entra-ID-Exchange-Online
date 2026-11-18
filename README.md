@@ -18,6 +18,7 @@
     - [Requirements](#requirements)
       - [App Registration \& Certificate Setup](#app-registration--certificate-setup)
       - [HelloID-specific configuration](#helloid-specific-configuration)
+      - [Permissions](#permissions)
       - [Convert .pfx to base64 string](#convert-pfx-to-base64-string)
     - [Connection settings](#connection-settings)
     - [Correlation configuration](#correlation-configuration)
@@ -67,11 +68,11 @@ The following features are available:
 | ----------------------------------------- | --------- | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
 | **Account Lifecycle**                     | ✅         | Create, Update, Enable, Disable, Delete                                                      |                                                                    |
 | **Correlate only**                        | ✅         | Correlate                                                                                    | Alternative setup, see [Correlate only mode](#correlate-only-mode) |
-| **Permissions**                           | ✅         | Groups (static and sub permissions), Phone, Email authentication and perUserMfaState methods |                                                                    |
+| **Permissions**                           | ✅         | Groups (static and sub permissions), Phone, Email authentication and perUserMfaState methods, Teams channels, educational groups, Exchange Online: shared mailboxes, Exchange groups, calendar folder permissions, out of office, regional configuration | See [Permissions](#permissions)                                     |
 | **Resources**                             | ✅         | Groups, Teams                                                                                | Only available for groups and teams                                |
 | **Uniqueness**                            | ✅         | -                                                                                            |                                                                    |
 | **Entitlement Import: Accounts**          | ✅         | -                                                                                            |                                                                    |
-| **Entitlement Import: Permissions**       | ✅         | Groups                                                                                       | Only available for groups                                          |
+| **Entitlement Import: Permissions**       | ✅         | Groups, Teams channels, educational groups, shared mailboxes, Exchange groups                | See [Permissions](#permissions)                                     |
 | **Governance Reconciliation Resolutions** | ✅         | Reconciliation  [Governance Remarks](#governance-remarks)                                    |                                                                    |
 
 ## Getting started
@@ -86,7 +87,7 @@ https://raw.githubusercontent.com/Tools4everBV/HelloID-Conn-Prov-Target-Microsof
 
 #### App Registration & Certificate Setup
 
-Before implementing this connector, make sure to configure a Microsoft Entra ID, an App Registration. During the setup process, you’ll create a new App Registration in the Entra portal, assign the necessary API permissions (such as user and group read/write), and generate and assign a certificate.
+Before implementing this connector, make sure to configure a Microsoft Entra ID, an App Registration. During the setup process, you’ll create a new App Registration in the Entra portal, assign the necessary API permissions, and generate and assign a certificate.
 
 Follow the official Microsoft documentation for creating an App Registration and setting up certificate-based authentication:
 - [App-only authentication with certificate (Exchange Online)](https://learn.microsoft.com/en-us/powershell/exchange/app-only-auth-powershell-v2?view=exchange-ps#set-up-app-only-authentication)
@@ -95,27 +96,44 @@ Follow the official Microsoft documentation for creating an App Registration and
 
 Once you have completed the Microsoft setup and followed their best practices, configure the following HelloID-specific requirements.
 
-- **API Permissions** (Application permissions):
-  - `User.ReadWrite.All`
-  - `Group.ReadWrite.All`
-  - `GroupMember.ReadWrite.All`
-  - `UserAuthenticationMethod.ReadWrite.All`
-  - `User.EnableDisableAccount.All`
-  - `User-PasswordProfile.ReadWrite.All`
-  - `User-Phone.ReadWrite.All`
-  - `Team.Create`
-  - `Team.ReadBasic.All`
-  - `TeamSettings.ReadWrite.All`
-- **Exchange Online permissions:**
-  - `Exchange.ManageAsApp` (Office 365 Exchange Online)
-- **Entra ID Role assignment:**
-  - Assign the **Exchange Recipient Administrator** role to the App Registration
+The permissions below are needed for the account scripts (`create.ps1`, `update.ps1`, `enable.ps1`, `disable.ps1`, `delete.ps1`, `import.ps1` and `uniquenessCheck.ps1`). Every permission and resource folder has its own README with the extra permissions it needs, see [Permissions](#permissions). Only add the permissions of the folders you use.
+
+- **API Permissions** (Microsoft Graph, application permissions):
+  - `User.ReadWrite.All`: create, read and update accounts and the manager
+  - `User.EnableDisableAccount.All`: enable and disable accounts
+  - `User-PasswordProfile.ReadWrite.All`: set the password on create
+  - `User-Phone.ReadWrite.All`: update `mobilePhone` and `businessPhones`
+- **Exchange Online** (only when `Exchange Online integration` is enabled):
+  - API permission `Exchange.ManageAsApp` (Office 365 Exchange Online, application)
+  - Entra ID role **Exchange Recipient Administrator** assigned to the App Registration
 - **Certificate:**
   - Upload the public key file (.cer) in Entra ID
   - Provide the certificate as a Base64 string in HelloID.
 
+#### Permissions
+
+| Folder                                                                                | Permission                                                    | Extra permissions                                   |
+| ------------------------------------------------------------------------------------- | ------------------------------------------------------------- | --------------------------------------------------- |
+| [permissions/groups](./permissions/groups/README.md)                                  | Membership of Microsoft 365 groups and security groups        | Graph                                               |
+| [permissions/educationalGroups](./permissions/educationalGroups/README.md)            | Members and owners of educational class teams                 | Graph                                               |
+| [permissions/teamChannels](./permissions/teamChannels/README.md)                      | Membership of private and shared Teams channels               | Graph                                               |
+| [permissions/phoneAuthenticationMethods](./permissions/phoneAuthenticationMethods/README.md) | Phone authentication methods                           | Graph                                               |
+| [permissions/emailAuthenticationMethods](./permissions/emailAuthenticationMethods/README.md) | Email authentication method                            | Graph                                               |
+| [permissions/perUserMfaState](./permissions/perUserMfaState/README.md)                | Per-user MFA state (beta)                                     | Graph                                               |
+| [permissions/sharedMailboxes](./permissions/sharedMailboxes/README.md)                | Full Access, Send As and Send on Behalf on shared mailboxes   | Exchange Online                                     |
+| [permissions/exchangeGroups](./permissions/exchangeGroups/README.md)                  | Membership of distribution groups and mail-enabled security groups | Exchange Online                                |
+| [permissions/folderPermission](./permissions/folderPermission/README.md)              | Access right on the calendar of the account's mailbox         | Exchange Online                                     |
+| [permissions/outOfOffice](./permissions/outOfOffice/README.md)                        | Out of office reply                                           | Exchange Online, extra configuration field          |
+| [permissions/regionalConfiguration](./permissions/regionalConfiguration/README.md)    | Language, date/time format and time zone of the mailbox       | Exchange Online                                     |
+| [resources/groups](./resources/groups/README.md)                                      | Resources: create groups                                      | Graph                                               |
+| [resources/teams](./resources/teams/README.md)                                        | Resources: create teams                                       | Graph                                               |
+| [temporaryAccessPass](./temporaryAccessPass/README.md)                                | Temporary Access Pass                                         | Graph                                               |
+| [guestInvite](#inviting-guest-accounts)                                               | Invite guest accounts                                         | Graph (`User.Invite.All`)                           |
+
+The Exchange Online permission scripts use the Exchange Online Admin API (REST), not the ExchangeOnlineManagement module. They need `Exchange.ManageAsApp` and the **Exchange Recipient Administrator** role, also when `Exchange Online integration` is disabled for the accounts.
+
 > [!NOTE]
-> **App registration permissions** depend on the functionality you use. For example, if you do not create teams using a resource script, read/write permissions are not required.
+> **App registration permissions** depend on the functionality you use. For example, if you do not create teams using a resource script, `Team.Create` is not required.
 
 #### Convert .pfx to base64 string
 HelloID requires a base64 string to import the certificate. With the example below, it is possible to create a base64 string
@@ -331,10 +349,9 @@ The following endpoints are used by the connector
 | -------------------------- | --------------------------------- |
 | /users                     | Handle user information           |
 | /users/{id}                | Get or update specific user       |
-| /users/{id}/authentication | Handle authentication method      |
 | /users/{id}/manager        | Get, set or remove user's manager |
-| /groups                    | Handle group information          |
-| /groups/{id}/members       | Get group members                 |
+
+The endpoints of the permission scripts are described in the README of each folder, see [Permissions](#permissions).
 
 ### ExO documentation
 

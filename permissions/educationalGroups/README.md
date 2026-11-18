@@ -16,19 +16,24 @@ The following features are available:
 
 Governance reconciliation is supported for permissions only. Accounts are dependent on the use of the Entra ID connector
 
-# HelloID-specific configuration
+## Required permissions
 
-Once you have completed the Microsoft setup and followed their best practices, configure the following HelloID-specific requirements.
+API permissions (Microsoft Graph, application) for the permission scripts (`members/` and `owners/`):
 
-- **API Permissions** (Application permissions):
-  - `User.ReadWrite.All`
-  - `Group.ReadWrite.All`
-  - `GroupMember.ReadWrite.All`
-  - `GroupMember.ReadWrite.All`
-  - `Team.Create`
-  - `Team.ReadBasic.All`
-  - `TeamMember.ReadWrite.All`
-  - `TeamSettings.ReadWrite.All`
+| Permission                  | Used for                                                     |
+| --------------------------- | ------------------------------------------------------------ |
+| `GroupMember.ReadWrite.All` | Listing the groups and members, adding and removing members  |
+| `Group.ReadWrite.All`       | Adding and removing owners (`owners/` only)                  |
+| `User.Read.All`             | Reading the account. Included in `User.ReadWrite.All` of the account scripts |
+
+API permissions (Microsoft Graph, application) for the resource scripts (`resources/educationalGroups/`):
+
+| Permission                   | Used for                                                    |
+| ---------------------------- | ----------------------------------------------------------- |
+| `Group.ReadWrite.All`        | Listing and creating the Microsoft 365 groups               |
+| `Team.Create`                | Creating the educational teams from the groups              |
+| `TeamSettings.ReadWrite.All` | Team settings of the educational teams                      |
+| `TeamMember.ReadWrite.All`   | Team membership of the owner                                |
 
 ## Configuration
 
