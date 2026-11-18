@@ -232,7 +232,7 @@ try {
     $actionMessage = "querying MS-Entra account where [$($correlationField)] [$($correlationValue)]"
     $selectPropertiesToGetUser = 'id,' + (($outputContext.Data | Select-Object * -ExcludeProperty ExchangeOnline, managerId ).PSObject.Properties.Name -join ',')
     $splatGetEntraUser = @{
-        Uri     = "https://graph.microsoft.com/v1.0/users?`$filter=$($correlationField) eq '$((("$correlationValue") -replace "'", "''" -replace '%', '%25' -replace '\+', '%2B' -replace '&', '%26' -replace '#', '%23'))'&`$select=$selectPropertiesToGetUser"
+        Uri     = "https://graph.microsoft.com/v1.0/users?`$filter=$($correlationField) eq '$([uri]::EscapeDataString((("$correlationValue") -replace "'", "''")))'&`$select=$selectPropertiesToGetUser"
         Method  = 'GET'
         Headers = @{'Authorization' = "Bearer $($entraToken)" }
     }
@@ -247,7 +247,7 @@ try {
         $actionMessage = "querying MS-Entra account where [$entraMailboxFallbackLookupProperty] = [$($correlationValue)]"
         $selectPropertiesToGetUser = ($outputContext.Data | Select-Object * -ExcludeProperty ExchangeOnline, managerId ).PSObject.Properties.Name -join ','
         $splatGetEntraUser = @{
-            Uri     = "https://graph.microsoft.com/v1.0/users?`$filter=$entraMailboxFallbackLookupProperty eq '$((("$correlationValue") -replace "'", "''" -replace '%', '%25' -replace '\+', '%2B' -replace '&', '%26' -replace '#', '%23'))'&`$select=$selectPropertiesToGetUser"
+            Uri     = "https://graph.microsoft.com/v1.0/users?`$filter=$entraMailboxFallbackLookupProperty eq '$([uri]::EscapeDataString((("$correlationValue") -replace "'", "''")))'&`$select=$selectPropertiesToGetUser"
             Method  = 'GET'
             Headers = @{'Authorization' = "Bearer $($entraToken)" }
         }

@@ -223,7 +223,7 @@ try {
         $actionMessage = "querying MS-Entra account on correlation field where [$correlationField] = [$($correlationValue)]"
         $selectPropertiesToGetUser = ($outputContext.Data | Select-Object * -ExcludeProperty ExchangeOnline, managerId ).PSObject.Properties.Name -join ','
         $splatGetEntraUser = @{
-            Uri     = "https://graph.microsoft.com/v1.0/users?`$filter=$correlationField eq '$((("$correlationValue") -replace "'", "''" -replace '%', '%25' -replace '\+', '%2B' -replace '&', '%26' -replace '#', '%23'))'&`$select=$selectPropertiesToGetUser"
+            Uri     = "https://graph.microsoft.com/v1.0/users?`$filter=$correlationField eq '$([uri]::EscapeDataString((("$correlationValue") -replace "'", "''")))'&`$select=$selectPropertiesToGetUser"
             Method  = 'GET'
             Headers = @{'Authorization' = "Bearer $($entraToken)" }
         }
@@ -236,7 +236,7 @@ try {
             $actionMessage = "querying MS-Entra account on fallback field where [$entraMailboxFallbackLookupProperty] = [$($entraMailboxFallbackLookupPropertyValue)]"
             $selectPropertiesToGetUser = ($outputContext.Data | Select-Object * -ExcludeProperty ExchangeOnline, managerId ).PSObject.Properties.Name -join ','
             $splatGetEntraUser = @{
-                Uri     = "https://graph.microsoft.com/v1.0/users?`$filter=$entraMailboxFallbackLookupProperty eq '$((("$entraMailboxFallbackLookupPropertyValue") -replace "'", "''" -replace '%', '%25' -replace '\+', '%2B' -replace '&', '%26' -replace '#', '%23'))'&`$select=$selectPropertiesToGetUser"
+                Uri     = "https://graph.microsoft.com/v1.0/users?`$filter=$entraMailboxFallbackLookupProperty eq '$([uri]::EscapeDataString((("$entraMailboxFallbackLookupPropertyValue") -replace "'", "''")))'&`$select=$selectPropertiesToGetUser"
                 Method  = 'GET'
                 Headers = @{'Authorization' = "Bearer $($entraToken)" }
             }
@@ -279,7 +279,7 @@ try {
         try {
             $correlatedAccount = $null
             $splatGetEntraUser = @{
-                Uri    = "https://graph.microsoft.com/v1.0/users?`$filter=$(($filter -replace '%', '%25' -replace '\+', '%2B' -replace '&', '%26' -replace '#', '%23'))&`$select=id,$($fieldToCheck.Value.systemFieldName)&`$count=true"
+                Uri    = "https://graph.microsoft.com/v1.0/users?`$filter=$([uri]::EscapeDataString($filter))&`$select=id,$($fieldToCheck.Value.systemFieldName)&`$count=true"
                 Method = 'GET'
             }
             Write-Information "splatGetEntraUser: $($splatGetEntraUser | ConvertTo-Json)"

@@ -196,7 +196,7 @@ function Get-ExORetryDelay {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
-        [object]$ErrorRecord,
+        [System.Management.Automation.ErrorRecord]$ErrorRecord,
 
         [Parameter(Mandatory)]
         [int]$Attempt,
@@ -238,7 +238,7 @@ function Get-ExORetryDelay {
                 $retryAfter = $ErrorRecord.Exception.Response.Headers.RetryAfter.Delta.TotalSeconds
             }
             if ($retryAfter) {
-                $delay = [int]"$retryAfter" * 1000
+                $delay = [int]([double]$retryAfter * 1000)
             }
         }
         catch {

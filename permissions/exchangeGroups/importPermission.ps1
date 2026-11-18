@@ -287,7 +287,7 @@ function Invoke-ExOBatchRequest {
     )
 
     $resultsByIndex = @{}
-    $pendingIndexes = @(if ($Requests.Count -gt 0) { 0..($Requests.Count - 1) })
+    [int[]]$pendingIndexes = @(if ($Requests.Count -gt 0) { 0..($Requests.Count - 1) })
 
     for ($attempt = 0; $pendingIndexes.Count -gt 0; $attempt++) {
         if ($attempt -gt 0) {
@@ -300,7 +300,7 @@ function Invoke-ExOBatchRequest {
             Start-Sleep -Seconds $delaySeconds
         }
 
-        $retryIndexes = [System.Collections.Generic.List[object]]::new()
+        $retryIndexes = [System.Collections.Generic.List[int]]::new()
 
         for ($i = 0; $i -lt $pendingIndexes.Count; $i += $BatchSize) {
             $batchIndexes = @($pendingIndexes[$i..[System.Math]::Min($i + $BatchSize - 1, $pendingIndexes.Count - 1)])
@@ -363,7 +363,7 @@ function Invoke-ExOBatchRequest {
                 throw
             }
 
-            $answeredIndexes = [System.Collections.Generic.List[object]]::new()
+            $answeredIndexes = [System.Collections.Generic.List[int]]::new()
             foreach ($response in @($batchResponse.responses)) {
                 $index = [int]$response.id
                 $answeredIndexes.Add($index)
