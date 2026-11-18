@@ -49,7 +49,7 @@ function Resolve-MS-Entra-ExoError {
                 $httpErrorObj.FriendlyMessage = "$($errorDetailsObject.error.code): $($errorDetailsObject.error.message)"
             }
             elseif ($errorDetailsObject.error.details.message) {
-                $httpErrorObj.FriendlyMessage = "$($errorDetailsObject.error.details.code): $($errorDetailsObject.details.message)"
+                $httpErrorObj.FriendlyMessage = "$($errorDetailsObject.error.details.code): $($errorDetailsObject.error.details.message)"
             }
             else {
                 $httpErrorObj.FriendlyMessage = $httpErrorObj.ErrorDetails
@@ -223,7 +223,7 @@ try {
         $actionMessage = "querying MS-Entra account on correlation field where [$correlationField] = [$($correlationValue)]"
         $selectPropertiesToGetUser = ($outputContext.Data | Select-Object * -ExcludeProperty ExchangeOnline, managerId ).PSObject.Properties.Name -join ','
         $splatGetEntraUser = @{
-            Uri     = "https://graph.microsoft.com/v1.0/users?`$filter=$correlationField eq '$($correlationValue)'&`$select=$selectPropertiesToGetUser"
+            Uri     = "https://graph.microsoft.com/v1.0/users?`$filter=$correlationField eq '$([uri]::EscapeDataString((("$correlationValue") -replace "'", "''")))'&`$select=$selectPropertiesToGetUser"
             Method  = 'GET'
             Headers = @{'Authorization' = "Bearer $($entraToken)" }
         }
@@ -236,7 +236,7 @@ try {
             $actionMessage = "querying MS-Entra account on fallback field where [$entraMailboxFallbackLookupProperty] = [$($entraMailboxFallbackLookupPropertyValue)]"
             $selectPropertiesToGetUser = ($outputContext.Data | Select-Object * -ExcludeProperty ExchangeOnline, managerId ).PSObject.Properties.Name -join ','
             $splatGetEntraUser = @{
-                Uri     = "https://graph.microsoft.com/v1.0/users?`$filter=$entraMailboxFallbackLookupProperty eq '$($entraMailboxFallbackLookupPropertyValue)'&`$select=$selectPropertiesToGetUser"
+                Uri     = "https://graph.microsoft.com/v1.0/users?`$filter=$entraMailboxFallbackLookupProperty eq '$([uri]::EscapeDataString((("$entraMailboxFallbackLookupPropertyValue") -replace "'", "''")))'&`$select=$selectPropertiesToGetUser"
                 Method  = 'GET'
                 Headers = @{'Authorization' = "Bearer $($entraToken)" }
             }
@@ -258,20 +258,20 @@ try {
         if ($fieldToCheck.Value.systemFieldName -eq 'proxyAddresses') {
             foreach ($fieldToCheckAccountValue in $fieldToCheck.Value.accountValue) {
                 if ($null -eq $filter) {
-                    $filter = "$($fieldToCheck.Value.systemFieldName)/any(c:c eq '$($fieldToCheckAccountValue)')" 
+                    $filter = "$($fieldToCheck.Value.systemFieldName)/any(c:c eq '$(("$fieldToCheckAccountValue") -replace "'", "''")')" 
                 }
                 else {
-                    $filter = $filter + " OR $($fieldToCheck.Value.systemFieldName)/any(c:c eq '$($fieldToCheckAccountValue)')"
+                    $filter = $filter + " OR $($fieldToCheck.Value.systemFieldName)/any(c:c eq '$(("$fieldToCheckAccountValue") -replace "'", "''")')"
                 }
             }
         }
         else {
-            $filter = "$($fieldToCheck.Value.systemFieldName) eq '$($fieldToCheck.Value.accountValue)'" 
+            $filter = "$($fieldToCheck.Value.systemFieldName) eq '$(("$($fieldToCheck.Value.accountValue)") -replace "'", "''")'" 
         }
 
         if (@($fieldToCheck.Value.crossCheckOn).Count -ge 1) {
             foreach ($fieldToCrossCheckOn in $fieldToCheck.Value.crossCheckOn) {
-                $filter = $filter + " OR $($fieldToCrossCheckOn) eq '$($fieldToCheck.Value.accountValue)'"
+                $filter = $filter + " OR $($fieldToCrossCheckOn) eq '$(("$($fieldToCheck.Value.accountValue)") -replace "'", "''")'"
             }
         }
 
@@ -279,7 +279,7 @@ try {
         try {
             $correlatedAccount = $null
             $splatGetEntraUser = @{
-                Uri    = "https://graph.microsoft.com/v1.0/users?`$filter=$($filter)&`$select=id,$($fieldToCheck.Value.systemFieldName)&`$count=true"
+                Uri    = "https://graph.microsoft.com/v1.0/users?`$filter=$([uri]::EscapeDataString($filter))&`$select=id,$($fieldToCheck.Value.systemFieldName)&`$count=true"
                 Method = 'GET'
             }
             Write-Information "splatGetEntraUser: $($splatGetEntraUser | ConvertTo-Json)"

@@ -46,7 +46,7 @@ function Resolve-MS-Entra-ExoError {
                 $httpErrorObj.FriendlyMessage = "$($errorDetailsObject.error.code): $($errorDetailsObject.error.message)"
             }
             elseif ($errorDetailsObject.error.details.message) {
-                $httpErrorObj.FriendlyMessage = "$($errorDetailsObject.error.details.code): $($errorDetailsObject.details.message)"
+                $httpErrorObj.FriendlyMessage = "$($errorDetailsObject.error.details.code): $($errorDetailsObject.error.details.message)"
             }
             else {
                 $httpErrorObj.FriendlyMessage = $httpErrorObj.ErrorDetails
@@ -398,7 +398,7 @@ try {
                     $emailAddressesChangedExo += $onlyInCorrelatedAccount | ForEach-Object { [PSCustomObject]@{ InputObject = $_; SideIndicator = '<=' } }
                     $emailAddressesChangedExo += $onlyInActionContextData | ForEach-Object { [PSCustomObject]@{ InputObject = $_; SideIndicator = '=>' } }
 
-                    if ($emailAddressesChangedExo) {
+                    if ($emailAddressesChangedExo -and 'UpdateAccountExo' -notin $actionList) {
                         $actionList.Add('UpdateAccountExo')
                     }
                 }
@@ -425,10 +425,13 @@ try {
         }
     }
     if ('UpdateAccountEntra' -notin $actionList -and ('UpdateAccountEXO' -notin $actionList)) {
-        $actionList.Add('NoChanges')
         if (-not $actionContext.Configuration.exchangeOnlineIntegration -and $outputContext.Data.PSObject.Properties.name -contains 'exchangeOnline') {
             $outputContext.Data.PSObject.Properties.Remove('exchangeOnline')
         }
+    }
+    # Only when nothing changes at all (also not the manager)
+    if ($actionList.Count -eq 0) {
+        $actionList.Add('NoChanges')
     }
 
     # Process
@@ -470,10 +473,11 @@ try {
                 }
                 foreach ($exoAccountProperty in $actionContext.Data.exchangeOnline.PsObject.Properties) {
                     if ($exoAccountProperty.Name -eq 'HiddenFromAddressListsEnabled') {
+                        # An empty value is skipped, Set-Mailbox does not accept null
                         if ($null -ne $exoAccountProperty.Value) {
                             $splatUpdateExoAccount['HiddenFromAddressListsEnabled'] = [bool]::Parse($exoAccountProperty.Value)
-                            continue
                         }
+                        continue
                     }
                     $splatUpdateExoAccount[$exoAccountProperty.Name] = $exoAccountProperty.Value
                 }
@@ -511,6 +515,7 @@ try {
                 else {
                     Write-Information "[DryRun] Update MS-Entra-Exo account with manager: [$($actionContext.References.ManagerAccount)], will be executed during enforcement"
                 }
+                $outputContext.Success = $true
                 $outputContext.AuditLogs.Add([PSCustomObject]@{
                         Message = "Set manager for Entra ID account with AccountReference: [$($actionContext.References.Account)] Manager: [$($actionContext.References.ManagerAccount)]"
                         IsError = $false
@@ -535,6 +540,7 @@ try {
                 else {
                     Write-Information '[DryRun] Clear manager for MS-Entra-Exo account, will be executed during enforcement'
                 }
+                $outputContext.Success = $true
                 $outputContext.AuditLogs.Add([PSCustomObject]@{
                         Message = "Cleared manager for Entra ID account with AccountReference: [$($actionContext.References.Account)]"
                         IsError = $false

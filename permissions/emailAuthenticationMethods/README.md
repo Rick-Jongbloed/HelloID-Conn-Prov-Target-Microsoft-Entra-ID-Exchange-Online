@@ -3,8 +3,8 @@
 Registers an email address as authentication method (used for self-service password reset) for the account via Microsoft Graph.
 
 - **Permission:** one permission, `email authentication method - email`.
-- **Email address:** taken from `Person.Contact.Personal.Email`.
-- **Grant:** with `$onlySetEmailWhenEmpty = $true` (default) an existing address is not overwritten.
+- **Email address:** `$email` at the top of `grantPermission.ps1`, default `Person.Contact.Personal.Email`.
+- **Grant:** with `$onlySetEmailWhenEmpty = $true` (default) an existing address is not overwritten. When the person has no email address, the grant fails with a clear error.
 - **Revoke:** with `$removeWhenRevokingEntitlement = $false` (default) the email method stays registered.
 
 | Script                 | Action                                                   |

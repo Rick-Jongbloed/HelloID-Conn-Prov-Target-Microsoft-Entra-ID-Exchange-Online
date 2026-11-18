@@ -17,6 +17,19 @@ All notable changes to this project will be documented in this file. The format 
 - **permissions/exchangeGroups/grantPermission.ps1** and **revokePermission.ps1**: the account reference is validated and trimmed like in the shared mailbox scripts, and DryRun is checked with `-ne $true`.
 
 ### Fixed
+- **permissions/emailAuthenticationMethods/revokePermission.ps1**: `$removeWhenRevokingEntitlement` worked the other way around; with the default (`$false`) the email method was deleted. It is now kept, as documented.
+- **permissions/phoneAuthenticationMethods/revokePermission.ps1**: read `phone` instead of `phoneNumber`, so the existing phone method was never found and never deleted.
+- **permissions/phoneAuthenticationMethods/grantPermission.ps1**: every phone type now has its own person field (`$phoneNumberMapping` at the top of the script; `alternateMobile` used the same number as `mobile`, `office` used the business mobile number). Landline numbers (`0...`) are converted to `+31...` (were `+0...`). An empty phone number gives a clear error instead of a Graph 400. Same check for the email address in `emailAuthenticationMethods/grantPermission.ps1` (`$email` at the top of the script).
+- **Graph sub permission imports** (`groups/subPermissionsImport.ps1`, `educationalGroups/*/importSubPermissions.ps1`, `teamChannels/importPermission.ps1`): with more than 500 accounts on one permission, every chunk is now a separate object; before, all chunks carried the accounts of the last chunk.
+- **Invoke-MSEntraBatchRequest** (all Graph list and import scripts): a failed sub-request in a `$batch` (429/5xx) is retried on its own (with `Retry-After`) and any other failure stops the script, instead of a warning and an empty result (an incomplete import or permission list). A sub-request that returns 404 (object deleted meanwhile) still gives an empty result. The whole batch is also retried on 500, 502 and 503.
+- **Resolve-MS-Entra-ExoError**: the message of `error.details` was read from the wrong property, so it was empty.
+- **update.ps1**: a change of only the manager no longer adds the audit log "No changes will be made"; `UpdateAccountExo` is no longer executed twice when both the properties and the email addresses changed.
+- **enable.ps1**: a missing mailbox no longer stops the action; the Entra ID account is enabled and Exchange Online is skipped with a warning, like update and disable.
+- **enable.ps1**, **disable.ps1**, **delete.ps1**: an empty `HiddenFromAddressListsEnabled` is skipped instead of failing; DryRun no longer calls `Set-Mailbox -WhatIf`.
+- **create.ps1**: the fallback lookup on `givenName` is only done with Exchange Online integration.
+- **create.ps1**, **uniquenessCheck.ps1**, **correlateOnly/create.ps1**, **guestInvite/create.ps1**: values in a Graph `$filter` are escaped (`'` → `''`) and URL encoded, so values with `'`, `+`, `&` or `#` are found correctly.
+- **permissions/teamChannels**: grant is idempotent (already a member with this role counts as success), revoke also finds members on the next pages, and DryRun reports success.
+- **permissions/groups** and **permissions/educationalGroups** grant: an error is reported with the HTTP details (like elsewhere) instead of the raw JSON, also when the response has no JSON body.
 - **Exchange import scripts**: with more than 500 accounts on one permission, every chunk is now a separate object; before, all chunks carried the accounts of the last chunk.
 - **permissions/sharedMailboxes**: error messages now read `error.details.message`, and the certificate is checked for a private key before signing.
 

@@ -43,7 +43,7 @@ function Resolve-MS-Entra-ExoError {
                 $httpErrorObj.FriendlyMessage = "$($errorDetailsObject.error.code): $($errorDetailsObject.error.message)"
             }
             elseif ($errorDetailsObject.error.details.message) {
-                $httpErrorObj.FriendlyMessage = "$($errorDetailsObject.error.details.code): $($errorDetailsObject.details.message)"
+                $httpErrorObj.FriendlyMessage = "$($errorDetailsObject.error.details.code): $($errorDetailsObject.error.details.message)"
             }
             else {
                 $httpErrorObj.FriendlyMessage = $httpErrorObj.ErrorDetails
@@ -149,6 +149,23 @@ function Get-MSEntraCertificate {
         $PSCmdlet.ThrowTerminatingError($_)
     }
 }
+function Get-TeamsChannelMembers {
+    # All direct members of a channel, following @odata.nextLink
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$TeamId,
+        [Parameter(Mandatory)][string]$ChannelId,
+        [Parameter(Mandatory)][object]$Headers
+    )
+    $members = [System.Collections.Generic.List[object]]::new()
+    $uri = "https://graph.microsoft.com/v1.0/teams/$($TeamId)/channels/$($ChannelId)/members"
+    do {
+        $response = Invoke-RestMethod -Uri $uri -Headers $Headers -Method 'GET' -Verbose:$false -ErrorAction 'Stop'
+        foreach ($member in @($response.value)) { $members.Add($member) }
+        $uri = $response.'@odata.nextLink'
+    } while (-not [string]::IsNullOrEmpty($uri))
+    Write-Output $members -NoEnumerate
+}
 #endregion functions
 
 try {
@@ -173,17 +190,11 @@ try {
     # Microsoft docs: https://learn.microsoft.com/en-us/graph/api/channel-list-members?view=graph-rest-1.0&tabs=http
     $actionMessage = "querying members of teams channel [$($actionContext.PermissionDisplayName)] with id [$($actionContext.References.Permission.ChannelId)]"
 
-    $getPermissionSplatParams = @{
-        Uri         = "https://graph.microsoft.com/v1.0/teams/$($actionContext.References.Permission.TeamId)/channels/$($actionContext.References.Permission.ChannelId)/members"
-        Headers     = $headers
-        Method      = "GET"
-        Verbose     = $false
-        ErrorAction = "Stop"
+    # All pages, so the account is also found in large channels
+    $getPermissionResponse = [PSCustomObject]@{
+        Value = Get-TeamsChannelMembers -TeamId $actionContext.References.Permission.TeamId -ChannelId $actionContext.References.Permission.ChannelId -Headers $headers
     }
 
-    $getPermissionResponse = $null
-    $getPermissionResponse = Invoke-RestMethod @getPermissionSplatParams
-    
     Write-Information "Queried members of teams channel [$($actionContext.PermissionDisplayName)] with id [$($actionContext.References.Permission.ChannelId)]. Result count: $(($getPermissionResponse.Value | Measure-Object).Count)"
 
     # Calulate action
@@ -231,7 +242,8 @@ try {
                     })
             }
             else {
-                Write-Warning "DryRun: Would revoke role [$($actionContext.References.Permission.Role)] to teams channel [$($actionContext.References.Permission.ChannelId)] for account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
+                Write-Information "[DryRun] Would revoke role [$($actionContext.References.Permission.Role)] to teams channel [$($actionContext.References.Permission.ChannelId)] for account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
+                $outputContext.success = $true
             }
         
             break
@@ -248,7 +260,8 @@ try {
                 $outputContext.success = $true
             }
             else {
-                Write-Warning "DryRun: Would skip revoking teams channel [$($actionContext.PermissionDisplayName)] with id [$($actionContext.References.Permission.ChannelId)] for account with AccountReference: $($actionContext.References.Account | ConvertTo-Json). Reason: Permission not found."
+                Write-Information "[DryRun] Would skip revoking teams channel [$($actionContext.PermissionDisplayName)] with id [$($actionContext.References.Permission.ChannelId)] for account with AccountReference: $($actionContext.References.Account | ConvertTo-Json). Reason: Permission not found."
+                $outputContext.success = $true
             }
 
             break

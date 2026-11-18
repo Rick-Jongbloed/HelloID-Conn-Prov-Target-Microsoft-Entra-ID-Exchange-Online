@@ -6,6 +6,14 @@
 # Permission configuration
 $onlySetMobileWhenEmpty = $true
 
+# Phone number per phone type (permission Type). Every type has its own person field, adjust to the source data of the customer.
+# Microsoft only accepts an alternateMobile when the account already has a mobile phone method.
+$phoneNumberMapping = @{
+    mobile          = $personContext.Person.Contact.Personal.Phone.Mobile
+    alternateMobile = $personContext.Person.Contact.Business.Phone.Mobile
+    office          = $personContext.Person.Contact.Business.Phone.Fixed
+}
+
 # Enable TLS1.2
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor [System.Net.SecurityProtocolType]::Tls12
 
@@ -45,7 +53,7 @@ function Resolve-MS-Entra-ExoError {
                 $httpErrorObj.FriendlyMessage = "$($errorDetailsObject.error.code): $($errorDetailsObject.error.message)"
             }
             elseif ($errorDetailsObject.error.details.message) {
-                $httpErrorObj.FriendlyMessage = "$($errorDetailsObject.error.details.code): $($errorDetailsObject.details.message)"
+                $httpErrorObj.FriendlyMessage = "$($errorDetailsObject.error.details.code): $($errorDetailsObject.error.details.message)"
             }
             else {
                 $httpErrorObj.FriendlyMessage = $httpErrorObj.ErrorDetails
@@ -202,22 +210,10 @@ try {
     $currentPhoneAuthenticationMethods = (Invoke-RestMethod @getCurrentPhoneAuthenticationMethodsSplatParams).Value
     $currentPhoneAuthenticationMethod = ($currentPhoneAuthenticationMethods | Where-Object { $_.phoneType -eq "$($actionContext.References.Permission.Type)" }).phoneNumber
 
-    switch ($actionContext.References.Permission.Type) {
-        "mobile" {
-            $phoneNumber = $PersonContext.Person.Contact.Personal.Phone.Mobile
-            break
-        }
-
-        "alternateMobile" {
-            $phoneNumber = $PersonContext.Person.Contact.Personal.Phone.Mobile
-            break
-        }
-
-        "office" {
-            $phoneNumber = $PersonContext.Person.Contact.Business.Phone.Mobile
-            break
-        }
+    if (-not $phoneNumberMapping.ContainsKey("$($actionContext.References.Permission.Type)")) {
+        throw "Unknown phone type [$($actionContext.References.Permission.Type)], add it to `$phoneNumberMapping at the top of the script"
     }
+    $phoneNumber = $phoneNumberMapping["$($actionContext.References.Permission.Type)"]
 
     $actionMessage = 'Determine phonenumber'
     if ($null -ne $phoneNumber -and $phoneNumber) {
@@ -230,6 +226,10 @@ try {
         }
         elseif ($phoneNumber.StartsWith("00")) {
             $phoneNumber = "+" + $phoneNumber.Substring(2)
+        }
+        elseif ($phoneNumber.StartsWith("0")) {
+            # Other Dutch numbers, e.g. a landline 020-1234567
+            $phoneNumber = "+31" + $phoneNumber.Substring(1)
         }
         if (-not $phoneNumber.StartsWith("+")) {
             $phoneNumber = "+" + $phoneNumber
@@ -258,6 +258,10 @@ try {
         $action = 'NotFound'
     }
 
+    if ($action -in @('GrantPermission', 'UpdatePermission') -and [string]::IsNullOrWhiteSpace($phoneNumber)) {
+        throw "The person has no phone number for type [$($actionContext.References.Permission.Type)] (see `$phoneNumberMapping at the top of the script)"
+    }
+
     Write-Information "Processing action [$action]"
 
     # Process
@@ -265,7 +269,7 @@ try {
         'GrantPermission' {
             #region Create phoneAuthenticationMethod
             # Microsoft docs: https://learn.microsoft.com/nl-nl/graph/api/authentication-post-phonemethods?view=graph-rest-1.0&tabs=http
-            $actionMessage = "creating phone authentication method [$($actionContext.References.Permission.Name)] for account to [$phoneNumber]"
+            $actionMessage = "creating phone authentication method [$($actionContext.References.Permission.Type)] for account to [$phoneNumber]"
             Write-Information $actionMessage
             $createPhoneAuthenticationMethodSplatParams = @{
                 Uri     = "https://graph.microsoft.com/v1.0/users/$($actionContext.References.Account)/authentication/phoneMethods"
