@@ -230,7 +230,7 @@ function Invoke-ExOPageRequest {
                 $statusCode = [int]$_.Exception.Response.StatusCode
             }
 
-            $isRetryable = $statusCode -eq 429 -or $statusCode -ge 500 -or $_.Exception -is [System.Threading.Tasks.TaskCanceledException]
+            $isRetryable = $statusCode -eq 429 -or $statusCode -ge 500 -or $_.Exception.GetType().FullName -eq 'System.Threading.Tasks.TaskCanceledException'
             if ($attempt -ge $MaxRetries -or -not $isRetryable) {
                 throw
             }
@@ -320,7 +320,7 @@ function Invoke-ExOBatchRequest {
     )
 
     $resultsByIndex = @{}
-    [int[]]$pendingIndexes = @(if ($Requests.Count -gt 0) { 0..($Requests.Count - 1) })
+    $pendingIndexes = @(if ($Requests.Count -gt 0) { 0..($Requests.Count - 1) })
 
     for ($attempt = 0; $pendingIndexes.Count -gt 0; $attempt++) {
         if ($attempt -gt 0) {
@@ -333,7 +333,7 @@ function Invoke-ExOBatchRequest {
             Start-Sleep -Seconds $delaySeconds
         }
 
-        $retryIndexes = [System.Collections.Generic.List[int]]::new()
+        $retryIndexes = [System.Collections.Generic.List[object]]::new()
 
         for ($i = 0; $i -lt $pendingIndexes.Count; $i += $BatchSize) {
             $batchIndexes = @($pendingIndexes[$i..[System.Math]::Min($i + $BatchSize - 1, $pendingIndexes.Count - 1)])
@@ -388,7 +388,7 @@ function Invoke-ExOBatchRequest {
                 }
 
                 # Throttling, server errors and timeouts: retry the whole batch
-                if ($statusCode -eq 429 -or $statusCode -ge 500 -or $_.Exception -is [System.Threading.Tasks.TaskCanceledException]) {
+                if ($statusCode -eq 429 -or $statusCode -ge 500 -or $_.Exception.GetType().FullName -eq 'System.Threading.Tasks.TaskCanceledException') {
                     Write-Warning "Batch request failed (client-request-id $($headers['client-request-id'])): $($_.Exception.Message)"
                     $batchIndexes | ForEach-Object { $retryIndexes.Add($_) }
                     continue
@@ -396,7 +396,7 @@ function Invoke-ExOBatchRequest {
                 throw
             }
 
-            $answeredIndexes = [System.Collections.Generic.List[int]]::new()
+            $answeredIndexes = [System.Collections.Generic.List[object]]::new()
             foreach ($response in @($batchResponse.responses)) {
                 $index = [int]$response.id
                 $answeredIndexes.Add($index)
@@ -448,7 +448,7 @@ function Resolve-MS-Entra-ExoError {
     [CmdletBinding()]
     param(
         [parameter(Mandatory, ValueFromPipeline)]
-        [System.Object]$ExceptionResponse
+        [object]$ExceptionResponse
     )
 
     process {

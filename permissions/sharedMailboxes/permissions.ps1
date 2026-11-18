@@ -106,7 +106,7 @@ function Resolve-MS-Entra-ExoError {
     [CmdletBinding()]
     param(
         [parameter(Mandatory, ValueFromPipeline)]
-        [System.Object]$ExceptionResponse
+        [object]$ExceptionResponse
     )
 
     process {
@@ -214,7 +214,7 @@ function Invoke-ExOPageRequest {
                 $statusCode = [int]$_.Exception.Response.StatusCode
             }
 
-            $isRetryable = $statusCode -eq 429 -or $statusCode -ge 500 -or $_.Exception -is [System.Threading.Tasks.TaskCanceledException]
+            $isRetryable = $statusCode -eq 429 -or $statusCode -ge 500 -or $_.Exception.GetType().FullName -eq 'System.Threading.Tasks.TaskCanceledException'
             if ($attempt -ge $MaxRetries -or -not $isRetryable) {
                 throw
             }

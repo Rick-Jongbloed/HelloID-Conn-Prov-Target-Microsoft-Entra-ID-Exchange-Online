@@ -192,7 +192,7 @@ try {
     # API docs: https://learn.microsoft.com/en-us/graph/api/user-list?view=graph-rest-1.0&tabs=http
     $actionMessage = "querying account where [$($correlationField)] = [$($correlationValue)]"
     $getEntraIDAccountSplatParams = @{
-        Uri         = "https://graph.microsoft.com/v1.0/users?`$filter=$correlationField eq '$([uri]::EscapeDataString((("$correlationValue") -replace "'", "''")))'&`$select=$($accountPropertiesToQuery -join ',')"
+        Uri         = "https://graph.microsoft.com/v1.0/users?`$filter=$correlationField eq '$((("$correlationValue") -replace "'", "''" -replace '%', '%25' -replace '\+', '%2B' -replace '&', '%26' -replace '#', '%23'))'&`$select=$($accountPropertiesToQuery -join ',')"
         Method      = "GET"
         Verbose     = $false
         ErrorAction = "Stop"

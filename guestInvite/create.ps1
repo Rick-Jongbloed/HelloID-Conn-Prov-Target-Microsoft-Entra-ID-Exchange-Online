@@ -177,7 +177,7 @@ try {
     $actionMessage = "querying MS-Entra account where [$($correlationField)] [$($correlationValue)]"
     $selectPropertiesToGetUser = 'id,' + (($outputContext.Data | Select-Object * -ExcludeProperty ExchangeOnline, managerId ).PSObject.Properties.Name -join ',')
     $splatGetEntraUser = @{
-        Uri     = "https://graph.microsoft.com/v1.0/users?`$filter=$($correlationField) eq '$([uri]::EscapeDataString((("$correlationValue") -replace "'", "''")))'&`$select=$selectPropertiesToGetUser"
+        Uri     = "https://graph.microsoft.com/v1.0/users?`$filter=$($correlationField) eq '$((("$correlationValue") -replace "'", "''" -replace '%', '%25' -replace '\+', '%2B' -replace '&', '%26' -replace '#', '%23'))'&`$select=$selectPropertiesToGetUser"
         Method  = 'GET'
         Headers = @{'Authorization' = "Bearer $($entraToken)" }
     }
@@ -191,7 +191,7 @@ try {
         if (-not [String]::IsNullOrEmpty($personContext.Manager.ExternalId)) {
             $actionMessage = "querying MS-Entra-Exo Manager Account employeeId eq [$($personContext.Manager.ExternalId)]"
             $splatGetEntraManager = @{
-                Uri     = "https://graph.microsoft.com/v1.0/users?`$filter=employeeId eq '$([uri]::EscapeDataString((("$($personContext.Manager.ExternalId)") -replace "'", "''")))'&`$select=id"
+                Uri     = "https://graph.microsoft.com/v1.0/users?`$filter=employeeId eq '$((("$($personContext.Manager.ExternalId)") -replace "'", "''" -replace '%', '%25' -replace '\+', '%2B' -replace '&', '%26' -replace '#', '%23'))'&`$select=id"
                 Method  = 'GET'
                 Headers = @{'Authorization' = "Bearer $($entraToken)" }
             }

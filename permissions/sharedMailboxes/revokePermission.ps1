@@ -106,7 +106,7 @@ function Resolve-MS-Entra-ExoError {
     [CmdletBinding()]
     param(
         [parameter(Mandatory, ValueFromPipeline)]
-        [System.Object]$ExceptionResponse
+        [object]$ExceptionResponse
     )
 
     process {
@@ -196,7 +196,7 @@ function Get-ExORetryDelay {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
-        [System.Management.Automation.ErrorRecord]$ErrorRecord,
+        [object]$ErrorRecord,
 
         [Parameter(Mandatory)]
         [int]$Attempt,
@@ -238,7 +238,7 @@ function Get-ExORetryDelay {
                 $retryAfter = $ErrorRecord.Exception.Response.Headers.RetryAfter.Delta.TotalSeconds
             }
             if ($retryAfter) {
-                $delay = [int]([double]$retryAfter * 1000)
+                $delay = [int]"$retryAfter" * 1000
             }
         }
         catch {
@@ -247,8 +247,8 @@ function Get-ExORetryDelay {
     }
     elseif (
         $statusCode -in @(500, 502, 503, 504) -or
-        $ErrorRecord.Exception -is [System.Threading.Tasks.TaskCanceledException] -or
-        $ErrorRecord.Exception -is [System.TimeoutException] -or
+        # Type names as text: HelloID does not allow these .NET types in a script
+        $ErrorRecord.Exception.GetType().FullName -in @('System.Threading.Tasks.TaskCanceledException', 'System.TimeoutException') -or
         ($retryableExceptions | Where-Object { $errorText.Contains($_) })
     ) {
         $delay = [int](1000 * [System.Math]::Pow(2, $Attempt)) + (Get-Random -Maximum 500)
