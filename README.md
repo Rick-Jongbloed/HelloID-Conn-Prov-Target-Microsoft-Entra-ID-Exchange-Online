@@ -13,6 +13,7 @@
   - [Table of contents](#table-of-contents)
   - [Introduction](#introduction)
   - [Supported  features](#supported--features)
+    - [Available permissions](#available-permissions)
   - [Getting started](#getting-started)
     - [HelloID Icon URL](#helloid-icon-url)
     - [Requirements](#requirements)
@@ -74,6 +75,26 @@ The following features are available:
 | **Entitlement Import: Accounts**          | ✅         | -                                                                                            |                                                                    |
 | **Entitlement Import: Permissions**       | ✅         | Groups, Teams channels, educational groups, shared mailboxes, Exchange groups                | See [Permissions](#permissions)                                     |
 | **Governance Reconciliation Resolutions** | ✅         | Reconciliation  [Governance Remarks](#governance-remarks)                                    |                                                                    |
+
+### Available permissions
+
+| Permission                                                                     | Description                                                                 | Grant | Revoke | Import | Sub permissions |
+| ------------------------------------------------------------------------------ | --------------------------------------------------------------------------- | ----- | ------ | ------ | --------------- |
+| [Groups](./permissions/groups/README.md)                                       | Membership of Microsoft 365 groups and cloud security groups                | ✅     | ✅      | ✅      | ✅               |
+| [Educational groups](./permissions/educationalGroups/README.md)                | Members and owners of educational class teams                               | ✅     | ✅      | ✅      | ✅               |
+| [Teams channels](./permissions/teamChannels/README.md)                         | Membership of private and shared Teams channels                             | ✅     | ✅      | ✅      | ❌               |
+| [Phone authentication methods](./permissions/phoneAuthenticationMethods/README.md) | Mobile, alternate mobile and office phone as authentication method      | ✅     | ✅¹     | ❌      | ❌               |
+| [Email authentication method](./permissions/emailAuthenticationMethods/README.md) | Email address as authentication method (SSPR)                            | ✅     | ✅¹     | ❌      | ❌               |
+| [Per-user MFA state](./permissions/perUserMfaState/README.md)                  | Enable or disable per-user MFA (Graph beta)                                 | ✅     | ✅      | ❌      | ❌               |
+| [Shared mailboxes](./permissions/sharedMailboxes/README.md)                    | Full Access, Send As and Send on Behalf on shared mailboxes                 | ✅     | ✅      | ✅      | ❌               |
+| [Exchange groups](./permissions/exchangeGroups/README.md)                      | Membership of distribution groups and mail-enabled security groups          | ✅     | ✅      | ✅      | ❌               |
+| [Calendar folder permission](./permissions/folderPermission/README.md)         | Access right of `Default` on the calendar of the account's mailbox          | ✅     | ❌      | ❌      | ❌               |
+| [Out of office](./permissions/outOfOffice/README.md)                           | Grant turns the out of office reply off, revoke turns it on                 | ✅     | ✅      | ❌      | ❌               |
+| [Regional configuration](./permissions/regionalConfiguration/README.md)        | Language, date/time format and time zone of the account's mailbox           | ✅     | ❌      | ❌      | ❌               |
+
+¹ Removing the method on revoke is off by default (`$removeWhenRevokingEntitlement`).
+
+The permissions on shared mailboxes, Exchange groups, calendar folders, out of office and regional configuration use the Exchange Online Admin API (REST) and do not need the ExchangeOnlineManagement module. The API permissions each permission needs are listed in its README, see [Permissions](#permissions).
 
 ## Getting started
 
