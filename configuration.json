@@ -95,13 +95,13 @@
         }
     },
     {
-    "defaultValue": false,
-    "key": "revokeSignInSessionsOnDisable",
-    "templateOptions": {
-        "description": "",
-        "label": "Revoke active sign in sessions on account disable",
-        "required": false
-    },
-    "type": "checkbox"
+        "key": "revokeSignInSessionsOnDisable",
+        "type": "checkbox",
+        "defaultValue": false,
+        "templateOptions": {
+            "label": "Revoke active sign in sessions on account disable",
+            "description": "Revokes all refresh tokens and session cookies of the user when the account is disabled. Access tokens that were already issued remain valid until they expire (about one hour).",
+            "required": false
+        }
     }
 ]

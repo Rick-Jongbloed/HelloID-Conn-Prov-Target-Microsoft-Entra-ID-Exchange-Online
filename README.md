@@ -146,7 +146,7 @@ The following settings are required to connect to the API.
 | deleteAccount              | Delete the account upon revoking the entitlement.                                                                                                         | No        |
 | setManagerOnCreate         | Assign a manager when an account is created.                                                                                                              | No        |
 | updateManagerOnUpdate      | Update the manager when the account update operation is performed.                                                                                        | No        |
-| revokeSignInSessionsOnDisable | Revoke all active sign-in sessions of the user when the account is disabled. See [Revoke sign-in sessions on disable](#revoke-sign-in-sessions-on-disable). | No        |
+| revokeSignInSessionsOnDisable | Revoke all active sign-in sessions of the user when the account is disabled. See [Revoke sign-in sessions on disable](#revoke-sign-in-sessions-on-disable).    | No        |
 
 ### Correlation configuration
 
@@ -258,7 +258,7 @@ The properties updated during Delete and Disable actions triggered by reconcilia
 
 ### Revoke sign-in sessions on disable
 
-When `revokeSignInSessionsOnDisable` is enabled, the disable script adds the `RevokeSignInSessions` action directly after `DisableAccountEntra`. This action calls the Graph API endpoint [`revokeSignInSessions`](https://learn.microsoft.com/en-us/graph/api/user-revokesigninsessions?view=graph-rest-1.0&tabs=http), which invalidates all refresh tokens and session cookies of the user. The user is forced to sign in again on all devices and applications, which fails because the account is disabled.
+When `revokeSignInSessionsOnDisable` is enabled, the disable script adds the `RevokeSignInSessions` action as the last action, after `DisableAccountEntra` and `DisableAccountEXO`. A failing revoke therefore never blocks the disable actions. This action calls the Graph API endpoint [`revokeSignInSessions`](https://learn.microsoft.com/en-us/graph/api/user-revokesigninsessions?view=graph-rest-1.0&tabs=http), which invalidates all refresh tokens and session cookies of the user. The user is forced to sign in again on all devices and applications, which fails because the account is disabled.
 
 - The action is only executed when the MS-Entra account is found.
 - The `correlateOnly` disable script also supports this option, see [correlateOnly/README.md](./correlateOnly/README.md#revoke-sign-in-sessions-on-disable).

@@ -68,7 +68,8 @@ When the `revokeSignInSessionsOnDisable` option is enabled in `configuration.jso
 Unlike the disable itself, revoking sessions is **not** limited to Reconciliation and is **not** blocked for AD synced accounts:
 
 - It runs for every origin, including regular enforcement. The user is signed out of Microsoft 365 as soon as HelloID processes the disable, even when the account itself is disabled through the on-premises AD.
-- It runs for both AD synced and cloud-only accounts.
+- It runs for both AD synced and cloud-only accounts. The revoke is executed before the disable, so it also runs during Reconciliation for an AD synced account, where the disable itself is blocked and the action fails.
+- When the option is disabled (default), actions with another origin than Reconciliation are skipped without querying Entra ID.
 
 > [!NOTE]
 > This action requires the `User.RevokeSessions.All` (least privileged) or `User.ReadWrite.All` application permission. Revoking sessions can take a few minutes to take effect, and access tokens that were already issued remain valid until they expire (by default about one hour).
@@ -80,7 +81,7 @@ Unlike the disable itself, revoking sessions is **not** limited to Reconciliatio
 | Create account           | ❌ Not supported, the account must already exist                                                                             | ✅ Creates the account in Entra ID (and optionally Exchange Online) |
 | Update account           | ⚠️ Optional, not added by default, see [Adding regular lifecycle scripts](#adding-regular-lifecycle-scripts-update-and-enable) | ✅ Supported                                                       |
 | Enable account           | ⚠️ Optional, not added by default, see [Adding regular lifecycle scripts](#adding-regular-lifecycle-scripts-update-and-enable) | ✅ Supported                                                       |
-| Disable account          | ⚠️ Reconciliation only, and only for cloud-only accounts for disable action. Sign in sessions can be revoked for all accounts                                                                     | ✅ Supported                                                       |
+| Disable account          | ⚠️ Reconciliation only, and only for cloud-only accounts. Revoking sign-in sessions (optional) is supported for all accounts | ✅ Supported                                                       |
 | Delete account           | ⚠️ Reconciliation only, and only for cloud-only accounts                                                                      | ✅ Supported                                                       |
 | Exchange Online          | ❌ Not supported                                                                                                             | ✅ Supported (optional)                                            |
 | Permissions/entitlements | ✅ Supported                                                                                                                 | ✅ Supported                                                       |

@@ -152,6 +152,15 @@ function Get-MSEntraCertificate {
 #endregion functions
 
 try {
+    $revokeSignInSessions = [bool]$actionContext.Configuration.revokeSignInSessionsOnDisable
+
+    # Nothing to do for other origins than Reconciliation, unless revoking sign-in sessions is enabled
+    if ($actionContext.Origin -ne 'Reconciliation' -and -not $revokeSignInSessions) {
+        Write-Information "Skipping action. [Origin] = [$($actionContext.Origin)]"
+        $outputContext.Success = $true
+        return
+    }
+
     # Verify if [aRef] has a value
     if ([string]::IsNullOrEmpty($($actionContext.References.Account))) {
         throw 'The account reference could not be found'
@@ -189,6 +198,32 @@ try {
         throw 'MS-Entra account not found'
     }
 
+    # Revoke sign-in sessions. Runs for every origin and also for AD synced accounts.
+    # This happens before the disable, so sessions are also revoked when the disable is blocked for AD synced accounts.
+    if ($revokeSignInSessions) {
+        # API docs: https://learn.microsoft.com/en-us/graph/api/user-revokesigninsessions?view=graph-rest-1.0&tabs=http
+        $actionMessage = "revoking sign in sessions of MS-Entra account with AccountReference [$($actionContext.References.Account)]"
+        $revokeUserSignInSplatParams = @{
+            Uri         = "https://graph.microsoft.com/v1.0/users/$($actionContext.References.Account)/revokeSignInSessions"
+            Headers     = @{'Authorization' = "Bearer $($entraToken)" }
+            ContentType = 'application/json;charset=utf-8'
+            Method      = 'POST'
+            Verbose     = $false
+            ErrorAction = 'Stop'
+        }
+        if (-not($actionContext.DryRun -eq $true)) {
+            $null = Invoke-RestMethod @revokeUserSignInSplatParams
+        }
+        else {
+            Write-Information "Dry run: would revoke sign in sessions of MS-Entra account [$($actionContext.References.Account)]"
+        }
+
+        $outputContext.AuditLogs.Add([PSCustomObject]@{
+                Message = "Revoking sign in sessions of MS-Entra account [$($actionContext.References.Account)] was successful"
+                IsError = $false
+            })
+    }
+
     # Only process disable action when triggered from Reconciliation
     if ($actionContext.Origin -eq 'Reconciliation') {
         # Check if account is synchronized from on-premises
@@ -220,31 +255,6 @@ try {
                 Message = 'Disable MS-Entra account was successful (reconciliation)'
                 IsError = $false
             })
-    }
-
-    if($actionContext.Configuration.revokeSignInSessionsOnDisable){
-        # Revoke signin sessions
-        # API docs: https://learn.microsoft.com/en-us/graph/api/user-revokesigninsessions?view=graph-rest-1.0&tabs=http
-        $actionMessage = "revoking signin sessions of user [$($actionContext.References.Account)] with userPrincipalName [$($correlatedAccountEntra.userPrincipalName)]"
-        $revokeUserSignInSplatParams = @{
-            Uri         = "https://graph.microsoft.com/v1.0/users/$($actionContext.References.Account)/revokeSignInSessions"
-            Headers     = @{'Authorization' = "Bearer $($entraToken)" }
-            ContentType = 'application/json;charset=utf-8'
-            Method      = "POST"
-            Verbose     = $false
-            ErrorAction = "Stop"
-        }
-        if (-not($actionContext.DryRun -eq $true)) {
-            $null = Invoke-RestMethod @revokeUserSignInSplatParams
-        }
-        else {
-            Write-Information "Dry run: would revoke signin sessions of user [$($actionContext.References.Account)] with userPrincipalName [$($correlatedAccountEntra.userPrincipalName)]"
-        }
-
-        $outputContext.AuditLogs.Add([PSCustomObject]@{
-            Message = 'Revoking signin sessions of MS-Entra account was successful'
-            IsError = $false
-        })
     }
 
     $outputContext.Success = $true

@@ -6,12 +6,12 @@ All notable changes to this project will be documented in this file. The format 
 
 ### Added
 - **Revoke sign-in sessions on disable**: new configuration option `revokeSignInSessionsOnDisable` (checkbox, default `false`). When enabled, the disable script revokes all active sign-in sessions of the user through the Graph API endpoint `/users/{id}/revokeSignInSessions`. Requires `User.RevokeSessions.All` (least privileged) or `User.ReadWrite.All`.
-  - `disable.ps1`: adds the `RevokeSignInSessions` action after `DisableAccountEntra` when the MS-Entra account is found.
-  - `correlateOnly/disable.ps1`: revokes sign-in sessions for every origin (not only Reconciliation) and also for AD synced accounts.
+  - `disable.ps1`: adds the `RevokeSignInSessions` action as the last action, after the Entra ID and Exchange Online disable actions, when the MS-Entra account is found.
+  - `correlateOnly/disable.ps1`: revokes sign-in sessions for every origin (not only Reconciliation) and also for AD synced accounts. This happens before the disable, so sessions are also revoked when the disable is blocked for an AD synced account during Reconciliation.
   - `configuration.json` and `correlateOnly/configuration.json`: added the `revokeSignInSessionsOnDisable` option.
 
 ### Changed
-- **correlateOnly/disable.ps1**: the Entra ID account is now always queried, regardless of the origin. The action fails when the account reference is empty or the account is not found, also for non-Reconciliation origins. The disable itself is still limited to Reconciliation and to cloud-only accounts.
+- **correlateOnly/disable.ps1**: when `revokeSignInSessionsOnDisable` is enabled, the Entra ID account is queried for every origin. The action then fails when the account reference is empty or the account is not found. With the option disabled (default) the behavior is unchanged: non-Reconciliation origins are skipped. The disable itself is still limited to Reconciliation and to cloud-only accounts.
 
 ## [2.7.0] - 2026-09-30
 
