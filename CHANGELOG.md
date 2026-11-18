@@ -13,6 +13,11 @@ All notable changes to this project will be documented in this file. The format 
 ### Changed
 - **correlateOnly/disable.ps1**: when `revokeSignInSessionsOnDisable` is enabled, the Entra ID account is queried for every origin. The action then fails when the account reference is empty or the account is not found. With the option disabled (default) the behavior is unchanged: non-Reconciliation origins are skipped. The disable itself is still limited to Reconciliation and to cloud-only accounts.
 
+## [2.7.1] - 2026-10-16
+
+### Fix
+- **update.ps1**: Added `-CaseSensitive` to attribute comparisons so changes that differ only by letter casing are detected for Entra ID and Exchange Online. Now this fields will also be updated in Entra ID and Exchange Online.
+
 ## [2.7.0] - 2026-09-30
 
 ### Changed

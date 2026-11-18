@@ -337,7 +337,7 @@ try {
             ReferenceObject  = @((ConvertTo-FlatObject -Object $correlatedAccountEntra).PSObject.Properties)
             DifferenceObject = @((ConvertTo-FlatObject -Object $actionContextDataFiltered).PSObject.Properties)
         }
-        $propertiesChangedEntra = Compare-Object @splatComparePropertiesEntra -PassThru | Where-Object { $_.SideIndicator -eq '=>' }
+        $propertiesChangedEntra = Compare-Object @splatComparePropertiesEntra -PassThru -CaseSensitive | Where-Object { $_.SideIndicator -eq '=>' }
         if ($propertiesChangedEntra) {
             $actionList.Add('UpdateAccountEntra')
         }
@@ -381,7 +381,7 @@ try {
                     ReferenceObject  = @((ConvertTo-FlatObject -Object $correlatedAccountExo).PSObject.Properties)
                     DifferenceObject = @((ConvertTo-FlatObject -Object $actionContext.Data.exchangeOnline | Select-Object * ).PSObject.Properties)
                 }
-                $propertiesChangedExo = Compare-Object @splatComparePropertiesExo -PassThru | Where-Object { $_.SideIndicator -eq '=>' }
+                $propertiesChangedExo = Compare-Object @splatComparePropertiesExo -PassThru -CaseSensitive | Where-Object { $_.SideIndicator -eq '=>' }
                 if ($propertiesChangedExo) {
                     $actionList.Add('UpdateAccountExo')
                 }
