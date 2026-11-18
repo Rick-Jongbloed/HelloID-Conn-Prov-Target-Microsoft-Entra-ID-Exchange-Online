@@ -520,21 +520,24 @@ try {
     $SharedMailboxes = Get-ExOSharedMailboxes -Authorization $ExOAuthorization -TenantID $tenantId
     Write-Information "Retrieved $(($SharedMailboxes | Measure-Object).Count) shared mailboxes."
 
-    $SharedMailboxes = @($SharedMailboxes | Where-Object { $null -ne $_ })
+    # Same selection as permissions.ps1: only shared mailboxes with an ExternalDirectoryObjectId (the permission id)
+    $SharedMailboxes = @($SharedMailboxes | Where-Object { $null -ne $_ -and -not [string]::IsNullOrEmpty($_.ExternalDirectoryObjectId) })
 
     # Full Access and Send As for all shared mailboxes via $batch (2 requests per shared mailbox, 10 per batch call)
     $actionMessage = 'retrieving mailbox permissions (Full Access) and recipient permissions (Send As)'
     Write-Information $actionMessage
     $permissionRequests = [System.Collections.Generic.List[object]]::new()
     foreach ($SharedMailbox in $SharedMailboxes) {
+        # Identity is the ExternalDirectoryObjectId, like in grant and revoke. 'Identity' of Get-Mailbox is the name of the
+        # mailbox, and a name can match multiple objects (a group or contact with the same name), which fails with status 409
         $permissionRequests.Add(@{
                 CmdletName = 'Get-MailboxPermission'
-                Parameters = @{ Identity = $SharedMailbox.Identity; ResultSize = 'Unlimited' }
+                Parameters = @{ Identity = $SharedMailbox.ExternalDirectoryObjectId; ResultSize = 'Unlimited' }
                 Select     = 'User,AccessRights,Deny,IsInherited'
             })
         $permissionRequests.Add(@{
                 CmdletName = 'Get-RecipientPermission'
-                Parameters = @{ Identity = $SharedMailbox.Identity; ResultSize = 'Unlimited' }
+                Parameters = @{ Identity = $SharedMailbox.ExternalDirectoryObjectId; ResultSize = 'Unlimited' }
                 Select     = 'Trustee,AccessRights,AccessControlType,IsInherited'
             })
     }
@@ -546,12 +549,12 @@ try {
     $RecipientPermissions = @{}
     for ($i = 0; $i -lt $SharedMailboxes.Count; $i++) {
         $SharedMailbox = $SharedMailboxes[$i]
-        $MailboxPermissions[$SharedMailbox.Identity] = @($permissionResults[2 * $i] | Where-Object {
+        $MailboxPermissions[$SharedMailbox.ExternalDirectoryObjectId] = @($permissionResults[2 * $i] | Where-Object {
                 $_.User -notin @('NT AUTHORITY\SELF', 'NULL SID') -and
                 "$($_.Deny)" -ne 'True' -and
                 "$($_.IsInherited)" -ne 'True'
             })
-        $RecipientPermissions[$SharedMailbox.Identity] = @($permissionResults[2 * $i + 1] | Where-Object {
+        $RecipientPermissions[$SharedMailbox.ExternalDirectoryObjectId] = @($permissionResults[2 * $i + 1] | Where-Object {
                 $_.Trustee -notin @('NT AUTHORITY\SELF', 'NULL SID') -and
                 "$($_.AccessControlType)" -notin @('Deny', '1') -and
                 "$($_.IsInherited)" -ne 'True'
@@ -570,7 +573,7 @@ try {
     foreach ($SharedMailbox in $SharedMailboxes) {
         # Full Access
         $fullAccessUsers = @()
-        $fullAccessPermissions = $MailboxPermissions[$SharedMailbox.Identity] | Where-Object {
+        $fullAccessPermissions = $MailboxPermissions[$SharedMailbox.ExternalDirectoryObjectId] | Where-Object {
             'FullAccess' -in $_.AccessRights
         }
 
@@ -599,7 +602,7 @@ try {
 
         # Send As
         $sendAsUsers = @()
-        $sendAsPermissions = $RecipientPermissions[$SharedMailbox.Identity] | Where-Object {
+        $sendAsPermissions = $RecipientPermissions[$SharedMailbox.ExternalDirectoryObjectId] | Where-Object {
             'SendAs' -in $_.AccessRights
         }
 

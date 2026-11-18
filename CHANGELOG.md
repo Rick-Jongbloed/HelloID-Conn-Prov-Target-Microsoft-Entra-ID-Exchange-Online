@@ -17,6 +17,7 @@ All notable changes to this project will be documented in this file. The format 
 - **permissions/exchangeGroups/grantPermission.ps1** and **revokePermission.ps1**: the account reference is validated and trimmed like in the shared mailbox scripts, and DryRun is checked with `-ne $true`.
 
 ### Fixed
+- **permissions/sharedMailboxes/importPermission.ps1**: the permissions are retrieved with the `ExternalDirectoryObjectId` of the shared mailbox (like grant and revoke) instead of `Identity`, which is the name of the mailbox. A name that also matches a group or contact failed with status 409 and stopped the import; two shared mailboxes with the same name got each other's permissions. Reported by Remco.
 - **Exchange permission scripts**: HelloID blocks the .NET types `System.Threading.Tasks.TaskCanceledException` and `System.TimeoutException` ("Script blocked: .NET type(s) ... are not supported"), so these exceptions are now recognised by their type name (`GetType().FullName`).
 - **permissions/emailAuthenticationMethods/revokePermission.ps1**: `$removeWhenRevokingEntitlement` worked the other way around; with the default (`$false`) the email method was deleted. It is now kept, as documented.
 - **permissions/phoneAuthenticationMethods/revokePermission.ps1**: read `phone` instead of `phoneNumber`, so the existing phone method was never found and never deleted.
