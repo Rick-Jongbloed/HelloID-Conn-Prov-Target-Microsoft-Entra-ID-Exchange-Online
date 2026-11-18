@@ -115,6 +115,9 @@ Once you have completed the Microsoft setup and followed their best practices, c
   - Provide the certificate as a Base64 string in HelloID.
 
 > [!NOTE]
+> Revoking sign-in sessions on disable (`revokeSignInSessionsOnDisable`) is covered by `User.ReadWrite.All`. If you want to use least privileged permissions, `User.RevokeSessions.All` is sufficient for this action.
+
+> [!NOTE]
 > **App registration permissions** depend on the functionality you use. For example, if you do not create teams using a resource script, read/write permissions are not required.
 
 #### Convert .pfx to base64 string
@@ -143,6 +146,7 @@ The following settings are required to connect to the API.
 | deleteAccount              | Delete the account upon revoking the entitlement.                                                                                                         | No        |
 | setManagerOnCreate         | Assign a manager when an account is created.                                                                                                              | No        |
 | updateManagerOnUpdate      | Update the manager when the account update operation is performed.                                                                                        | No        |
+| revokeSignInSessionsOnDisable | Revoke all active sign-in sessions of the user when the account is disabled. See [Revoke sign-in sessions on disable](#revoke-sign-in-sessions-on-disable).    | No        |
 
 ### Correlation configuration
 
@@ -252,6 +256,16 @@ The properties updated during Delete and Disable actions triggered by reconcilia
 - `accountEnabled = $false`
 - `HiddenFromAddressListsEnabled = $true`  *EXO only
 
+### Revoke sign-in sessions on disable
+
+When `revokeSignInSessionsOnDisable` is enabled, the disable script adds the `RevokeSignInSessions` action as the last action, after `DisableAccountEntra` and `DisableAccountEXO`. A failing revoke therefore never blocks the disable actions. This action calls the Graph API endpoint [`revokeSignInSessions`](https://learn.microsoft.com/en-us/graph/api/user-revokesigninsessions?view=graph-rest-1.0&tabs=http), which invalidates all refresh tokens and session cookies of the user. The user is forced to sign in again on all devices and applications, which fails because the account is disabled.
+
+- The action is only executed when the MS-Entra account is found.
+- The `correlateOnly` disable script also supports this option, see [correlateOnly/README.md](./correlateOnly/README.md#revoke-sign-in-sessions-on-disable).
+
+> [!NOTE]
+> Revoking sessions can take a few minutes to take effect. Access tokens that were already issued remain valid until they expire (by default about one hour).
+
 ### ExO PowerShell module
 
 Within HelloID, version _3.5.1_ of the Exchange Online module is being used. https://www.powershellgallery.com/packages/ExchangeOnlineManagement/3.5.1
@@ -333,6 +347,7 @@ The following endpoints are used by the connector
 | /users/{id}                | Get or update specific user       |
 | /users/{id}/authentication | Handle authentication method      |
 | /users/{id}/manager        | Get, set or remove user's manager |
+| /users/{id}/revokeSignInSessions | Revoke all sign-in sessions of a user |
 | /groups                    | Handle group information          |
 | /groups/{id}/members       | Get group members                 |
 

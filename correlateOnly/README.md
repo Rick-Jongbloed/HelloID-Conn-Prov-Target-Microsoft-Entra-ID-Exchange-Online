@@ -8,6 +8,7 @@
   - [Setting up the target system](#setting-up-the-target-system)
   - [What this mode does (and does not) do](#what-this-mode-does-and-does-not-do)
   - [Reconciliation behavior](#reconciliation-behavior)
+  - [Revoke sign-in sessions on disable](#revoke-sign-in-sessions-on-disable)
   - [Limitations compared to the full CRUD connector](#limitations-compared-to-the-full-crud-connector)
   - [Adding regular lifecycle scripts (update and enable)](#adding-regular-lifecycle-scripts-update-and-enable)
   - [Keeping read-only fields in sync with a None mapping](#keeping-read-only-fields-in-sync-with-a-none-mapping)
@@ -36,7 +37,7 @@ Create a **separate** target system in HelloID and only import the files from th
 
 Do not combine these files with the `create.ps1`, `configuration.json`, `fieldMapping.json` or `import.ps1` from the root of the repository, they are not compatible with each other.
 
-The `configuration.json` in this folder only contains the connection settings required to query Microsoft Entra ID (Organization, TenantID, AppID and certificate). Options such as `exchangeOnlineIntegration`, `deleteAccount`, `setManagerOnCreate` and `updateManagerOnUpdate` are not present, as they are not applicable in this mode.
+The `configuration.json` in this folder only contains the connection settings required to query Microsoft Entra ID (Organization, TenantID, AppID and certificate). Options such as `exchangeOnlineIntegration`, `deleteAccount`, `setManagerOnCreate` and `updateManagerOnUpdate` are not present, as they are not applicable in this mode. The only additional option is `revokeSignInSessionsOnDisable`, see [Revoke sign-in sessions on disable](#revoke-sign-in-sessions-on-disable).
 
 Next, configure the scripts from the [`permissions/`](../permissions/) folder for the entitlements you need, e.g. group memberships. These are the same scripts used for the full CRUD connector, there is no correlate only variant.
 
@@ -44,7 +45,7 @@ Next, configure the scripts from the [`permissions/`](../permissions/) folder fo
 
 - `create.ps1` does **not** create a new account. It looks up an existing account in Microsoft Entra ID using the configured [correlation configuration](../README.md#correlation-configuration) and correlates it to the person. If no account, or more than one account, is found, the action fails.
 - `import.ps1` imports the correlated accounts, so they are visible for entitlement/permission assignment and reconciliation. For accounts with `onPremisesSyncEnabled -eq $true`, the imported `Enabled` state is always reported as `false`, regardless of the actual `accountEnabled` value in Entra ID. This avoids reconciliation actions/errors on AD synced accounts, that insight is already provided by the AD connector.
-- `disable.ps1` and `delete.ps1` only process actions that originate from Reconciliation. They protect AD synced accounts and only disable or delete cloud-only accounts.
+- `disable.ps1` and `delete.ps1` only disable or delete accounts for actions that originate from Reconciliation. They protect AD synced accounts and only disable or delete cloud-only accounts. When `revokeSignInSessionsOnDisable` is enabled, `disable.ps1` also revokes the sign-in sessions of the account for every origin, see [Revoke sign-in sessions on disable](#revoke-sign-in-sessions-on-disable).
 - `fieldMapping.json` only maps `id` (used as the account reference), `employeeId` (used for correlation), `userPrincipalName` and `onPremisesSyncEnabled`. All mappings use the `None` mapping mode, meaning the values are only read from Entra ID and stored in HelloID, they are never written back.
 - There is no `update.ps1` or `enable.ps1` in this folder, since regular account lifecycle changes are typically handled by the source that manages the account in Entra ID (e.g. on-premises AD). These regular scripts from the root of the repository are optional and can be added to the same target system when needed, see [Adding regular lifecycle scripts](#adding-regular-lifecycle-scripts-update-and-enable).
 - Permission scripts in the [`permissions/`](../permissions/) folder can still be used on top of a correlate only target system, since they only require the account reference produced by `create.ps1`.
@@ -60,6 +61,19 @@ During a Reconciliation action, the scripts retrieve the correlated Entra ID acc
 
 This makes the correlate only variant suitable for environments where HelloID manages permissions for AD synced accounts, while still allowing Reconciliation cleanup for cloud-only accounts that should be disabled or deleted.
 
+## Revoke sign-in sessions on disable
+
+When the `revokeSignInSessionsOnDisable` option is enabled in `configuration.json`, `disable.ps1` revokes all active sign-in sessions of the correlated Entra ID account using the Graph API endpoint [`revokeSignInSessions`](https://learn.microsoft.com/en-us/graph/api/user-revokesigninsessions?view=graph-rest-1.0&tabs=http).
+
+Unlike the disable itself, revoking sessions is **not** limited to Reconciliation and is **not** blocked for AD synced accounts:
+
+- It runs for every origin, including regular enforcement. The user is signed out of Microsoft 365 as soon as HelloID processes the disable, even when the account itself is disabled through the on-premises AD.
+- It runs for both AD synced and cloud-only accounts. The revoke is executed before the disable, so it also runs during Reconciliation for an AD synced account, where the disable itself is blocked and the action fails.
+- When the option is disabled (default), actions with another origin than Reconciliation are skipped without querying Entra ID.
+
+> [!NOTE]
+> This action requires the `User.RevokeSessions.All` (least privileged) or `User.ReadWrite.All` application permission. Revoking sessions can take a few minutes to take effect, and access tokens that were already issued remain valid until they expire (by default about one hour).
+
 ## Limitations compared to the full CRUD connector
 
 | Aspect                   | Correlate only                                                                                                              | Full CRUD (root of the repository)                               |
@@ -67,7 +81,7 @@ This makes the correlate only variant suitable for environments where HelloID ma
 | Create account           | ❌ Not supported, the account must already exist                                                                             | ✅ Creates the account in Entra ID (and optionally Exchange Online) |
 | Update account           | ⚠️ Optional, not added by default, see [Adding regular lifecycle scripts](#adding-regular-lifecycle-scripts-update-and-enable) | ✅ Supported                                                       |
 | Enable account           | ⚠️ Optional, not added by default, see [Adding regular lifecycle scripts](#adding-regular-lifecycle-scripts-update-and-enable) | ✅ Supported                                                       |
-| Disable account          | ⚠️ Reconciliation only, and only for cloud-only accounts                                                                      | ✅ Supported                                                       |
+| Disable account          | ⚠️ Reconciliation only, and only for cloud-only accounts. Revoking sign-in sessions (optional) is supported for all accounts | ✅ Supported                                                       |
 | Delete account           | ⚠️ Reconciliation only, and only for cloud-only accounts                                                                      | ✅ Supported                                                       |
 | Exchange Online          | ❌ Not supported                                                                                                             | ✅ Supported (optional)                                            |
 | Permissions/entitlements | ✅ Supported                                                                                                                 | ✅ Supported                                                       |
