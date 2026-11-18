@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file. The format 
 
 ## [Unreleased]
 
+### Added
+- **permissions/folderPermission**, **permissions/outOfOffice** and **permissions/regionalConfiguration**: ported from the [ExchangeOnline connector](https://github.com/Tools4everBV/HelloID-Conn-Prov-Target-ExchangeOnline/tree/feature-out-of-office) to the Exchange Admin API (beta `InvokeCommand`), so no ExchangeOnlineManagement module is needed. Same style as the shared mailbox scripts: retry on 429, 5xx and timeouts within the action deadline, `X-AnchorMailbox` set to `Oid:<account reference>@<tenant id>`, and DryRun support. Behaviour is the same as the source: folderPermission and regionalConfiguration only have a grant script, the outOfOffice grant disables the reply and the revoke enables it with the message from the custom configuration key `OutOfOfficeReply` (see permissions/outOfOffice/README.md).
+
 ### Changed
 - **permissions/sharedMailboxes/grantPermission.ps1** and **revokePermission.ps1**: `X-AnchorMailbox` is now `Oid:<shared mailbox object id>@<tenant id>` instead of the system mailbox, so all requests for one shared mailbox are routed to the same Exchange backend server. The import scripts keep the system mailbox anchor.
 - **permissions/sharedMailboxes/importPermission.ps1**, **permissions/exchangeGroups/importPermission.ps1** and **permissions/exchangeGroups/permissions.ps1**: large results are now read completely. The list of distribution groups and every `$batch` sub-response (mailbox permissions, recipient permissions, group members) follow `@odata.nextLink` until the last page; before, only the first page was used.
