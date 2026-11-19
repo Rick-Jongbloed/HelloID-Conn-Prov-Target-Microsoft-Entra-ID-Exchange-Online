@@ -245,7 +245,7 @@ try {
     if ($correlatedAccountEntra.Count -eq 0 -and $actionContext.Configuration.ExchangeOnlineIntegration) {
         # Fallback
         $actionMessage = "querying MS-Entra account where [$entraMailboxFallbackLookupProperty] = [$($correlationValue)]"
-        $selectPropertiesToGetUser = ($outputContext.Data | Select-Object * -ExcludeProperty ExchangeOnline, managerId ).PSObject.Properties.Name -join ','
+        $selectPropertiesToGetUser = 'id,' + (($outputContext.Data | Select-Object * -ExcludeProperty ExchangeOnline, managerId ).PSObject.Properties.Name -join ',')
         $splatGetEntraUser = @{
             Uri     = "https://graph.microsoft.com/v1.0/users?`$filter=$entraMailboxFallbackLookupProperty eq '$([uri]::EscapeDataString((("$correlationValue") -replace "'", "''")))'&`$select=$selectPropertiesToGetUser"
             Method  = 'GET'
