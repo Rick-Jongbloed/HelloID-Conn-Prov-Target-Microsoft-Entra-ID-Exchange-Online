@@ -2,6 +2,31 @@
 
 All notable changes to this project will be documented in this file. The format is based on [Keep a Changelog](https://keepachangelog.com), and this project adheres to [Semantic Versioning](https://semver.org).
 
+## [2.8.1] - 2026-11-19
+
+### Fix
+- **permissions/emailAuthenticationMethods/revokePermission.ps1**: `$removeWhenRevokingEntitlement` worked the other way around. With the default (`$false`) the email method was deleted on revoke; it is now kept, and only deleted with `$true`.
+- **permissions/phoneAuthenticationMethods/revokePermission.ps1**: the existing method was read from `phone` instead of `phoneNumber`, so it was never found and never deleted, also not with `$removeWhenRevokingEntitlement = $true`.
+- **permissions/phoneAuthenticationMethods/grantPermission.ps1**:
+  - Every phone type now has its own person field in `$phoneNumberMapping` at the top of the script. Before, `alternateMobile` used the same number as `mobile`, and `office` used the business mobile number. Defaults: `mobile` = `Person.Contact.Personal.Phone.Mobile`, `alternateMobile` = `Person.Contact.Business.Phone.Mobile`, `office` = `Person.Contact.Business.Phone.Fixed`.
+  - Dutch landline numbers (`0...`) are converted to `+31...` (were `+0...`).
+  - When the person has no number for the type, the grant fails with a clear error instead of a Graph 400.
+- **permissions/emailAuthenticationMethods/grantPermission.ps1**: the email address is set in `$email` at the top of the script; an empty address gives a clear error instead of a Graph 400.
+- **Sub permission imports** (`groups/subPermissionsImport.ps1`, `educationalGroups/members/importSubPermissions.ps1`, `educationalGroups/owners/importSubPermissions.ps1`, `teamChannels/importPermission.ps1`): with more than 500 accounts on one permission, every chunk is now a separate object. Before, the same object was output for every chunk, so all chunks carried the accounts of the last chunk.
+- **Invoke-MSEntraBatchRequest** (all list and import scripts that use `$batch`): a failed sub-request (429/5xx) was only logged as a warning and returned an empty result, which gave an incomplete import or permission list. It is now retried on its own (with `Retry-After`, as the 2.7.0 changelog describes), and any other failure stops the script. A sub-request that returns 404 (object deleted meanwhile) still gives an empty result. The whole batch is also retried on 500, 502 and 503 (was 429 and 504).
+- **Resolve-MS-Entra-ExoError** (all scripts): the message of `error.details` was read from `details.message` instead of `error.details.message`, so it was empty.
+- **update.ps1**:
+  - A change of only the manager no longer adds the audit log "No changes will be made to the account during enforcement". The manager actions now set `Success` themselves.
+  - `UpdateAccountExo` is no longer added (and executed) twice when both the mailbox properties and the email addresses changed.
+- **enable.ps1**: a missing mailbox no longer stops the action. The Entra ID account is enabled and Exchange Online is skipped with a warning, like in update and disable.
+- **create.ps1**, **update.ps1**, **enable.ps1**, **disable.ps1**, **delete.ps1**: an empty `HiddenFromAddressListsEnabled` is skipped instead of failing (`[bool]::Parse` on null or an empty value for Set-Mailbox). In DryRun, enable, disable and delete no longer call `Set-Mailbox -WhatIf`, but log what would be done, like the other scripts.
+- **create.ps1**: the fallback lookup on `givenName` is only done with Exchange Online integration. Without it, a match gave the audit log "Retrying account creation" while a new account was created.
+- **create.ps1**, **uniquenessCheck.ps1**, **correlateOnly/create.ps1**, **guestInvite/create.ps1**: values in a Graph `$filter` are escaped (`'` becomes `''`) and URL encoded, so values with `'`, `+`, `&` or `#` (for example `o'brien+test@domain.com`) are found correctly instead of giving a 400 or a wrong result.
+- **permissions/teamChannels/grantPermission.ps1**: an account that is already a member of the channel with the role counts as success (the members are checked after a failed add), like the group scripts.
+- **permissions/teamChannels/revokePermission.ps1**: the channel members are read with paging (`@odata.nextLink`), so the account is also found in large channels.
+- **permissions/teamChannels**: grant and revoke report success in DryRun (preview).
+- **permissions/groups/grantPermission.ps1** and **permissions/educationalGroups/*/grantPermission.ps1**: an error is reported with its HTTP details, like elsewhere, instead of the raw JSON. An error without a JSON body is reported as well (before, `ConvertFrom-Json` failed on it).
+
 ## [2.8.0] - 2026-11-09
 
 ### Added

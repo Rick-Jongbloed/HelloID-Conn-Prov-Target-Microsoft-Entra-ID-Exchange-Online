@@ -46,7 +46,7 @@ function Resolve-MS-Entra-ExoError {
                 $httpErrorObj.FriendlyMessage = "$($errorDetailsObject.error.code): $($errorDetailsObject.error.message)"
             }
             elseif ($errorDetailsObject.error.details.message) {
-                $httpErrorObj.FriendlyMessage = "$($errorDetailsObject.error.details.code): $($errorDetailsObject.details.message)"
+                $httpErrorObj.FriendlyMessage = "$($errorDetailsObject.error.details.code): $($errorDetailsObject.error.details.message)"
             }
             else {
                 $httpErrorObj.FriendlyMessage = $httpErrorObj.ErrorDetails
@@ -324,7 +324,10 @@ try {
                         $auditMessage = 'Update of MS-Exo mailbox in delete action was successful'
                         foreach ($exoAccountProperty in $actionContext.Data.exchangeOnline.PsObject.Properties) {
                             if ($exoAccountProperty.Name -eq 'HiddenFromAddressListsEnabled') {
-                                $splatUpdateExoAccount['HiddenFromAddressListsEnabled'] = [bool]::Parse($exoAccountProperty.Value)
+                                # An empty value is skipped, Set-Mailbox does not accept null
+                                if ($null -ne $exoAccountProperty.Value) {
+                                    $splatUpdateExoAccount['HiddenFromAddressListsEnabled'] = [bool]::Parse($exoAccountProperty.Value)
+                                }
                                 continue
                             }
                             $splatUpdateExoAccount[$exoAccountProperty.Name] = $exoAccountProperty.Value
@@ -345,7 +348,7 @@ try {
                     $null = Set-Mailbox @splatUpdateExoAccount -Verbose:$false -ErrorAction Stop
                 }
                 else {
-                    $null = Set-Mailbox @splatUpdateExoAccount -Verbose:$false -ErrorAction Stop -WhatIf
+                    Write-Information "[DryRun] Update Exchange Online mailbox with AccountReference [$($actionContext.References.Account)], will be executed during enforcement"
                 }
                 $outputContext.Success = $true
                 $outputContext.AuditLogs.Add([PSCustomObject]@{

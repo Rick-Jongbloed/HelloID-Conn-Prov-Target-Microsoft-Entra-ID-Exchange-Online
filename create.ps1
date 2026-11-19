@@ -51,7 +51,7 @@ function Resolve-MS-Entra-ExoError {
                 $httpErrorObj.FriendlyMessage = "$($errorDetailsObject.error.code): $($errorDetailsObject.error.message)"
             }
             elseif ($errorDetailsObject.error.details.message) {
-                $httpErrorObj.FriendlyMessage = "$($errorDetailsObject.error.details.code): $($errorDetailsObject.details.message)"
+                $httpErrorObj.FriendlyMessage = "$($errorDetailsObject.error.details.code): $($errorDetailsObject.error.details.message)"
             }
             else {
                 $httpErrorObj.FriendlyMessage = $httpErrorObj.ErrorDetails
@@ -232,7 +232,7 @@ try {
     $actionMessage = "querying MS-Entra account where [$($correlationField)] [$($correlationValue)]"
     $selectPropertiesToGetUser = 'id,' + (($outputContext.Data | Select-Object * -ExcludeProperty ExchangeOnline, managerId ).PSObject.Properties.Name -join ',')
     $splatGetEntraUser = @{
-        Uri     = "https://graph.microsoft.com/v1.0/users?`$filter=$($correlationField) eq '$($correlationValue)'&`$select=$selectPropertiesToGetUser"
+        Uri     = "https://graph.microsoft.com/v1.0/users?`$filter=$($correlationField) eq '$([uri]::EscapeDataString((("$correlationValue") -replace "'", "''")))'&`$select=$selectPropertiesToGetUser"
         Method  = 'GET'
         Headers = @{'Authorization' = "Bearer $($entraToken)" }
     }
@@ -241,12 +241,13 @@ try {
         throw "Multiple Extra accounts found based on [$($correlationField) eq $($correlationValue)]"
     }
 
-    if ($correlatedAccountEntra.Count -eq 0) {
+    # The fallback is only needed with Exchange Online integration (the mailbox is created before the correlation value is set)
+    if ($correlatedAccountEntra.Count -eq 0 -and $actionContext.Configuration.ExchangeOnlineIntegration) {
         # Fallback
         $actionMessage = "querying MS-Entra account where [$entraMailboxFallbackLookupProperty] = [$($correlationValue)]"
         $selectPropertiesToGetUser = ($outputContext.Data | Select-Object * -ExcludeProperty ExchangeOnline, managerId ).PSObject.Properties.Name -join ','
         $splatGetEntraUser = @{
-            Uri     = "https://graph.microsoft.com/v1.0/users?`$filter=$entraMailboxFallbackLookupProperty eq '$($correlationValue)'&`$select=$selectPropertiesToGetUser"
+            Uri     = "https://graph.microsoft.com/v1.0/users?`$filter=$entraMailboxFallbackLookupProperty eq '$([uri]::EscapeDataString((("$correlationValue") -replace "'", "''")))'&`$select=$selectPropertiesToGetUser"
             Method  = 'GET'
             Headers = @{'Authorization' = "Bearer $($entraToken)" }
         }
@@ -455,10 +456,11 @@ try {
                 }
                 foreach ($exoAccountProperty in $actionContext.Data.exchangeOnline.PsObject.Properties) {
                     if ($exoAccountProperty.Name -eq 'HiddenFromAddressListsEnabled') {
+                        # An empty value is skipped, Set-Mailbox does not accept null
                         if ($null -ne $exoAccountProperty.Value) {
                             $splatUpdateExoAccount['HiddenFromAddressListsEnabled'] = [bool]::Parse($exoAccountProperty.Value)
-                            continue
                         }
+                        continue
                     }
                     $splatUpdateExoAccount[$exoAccountProperty.Name] = $exoAccountProperty.Value
                 }

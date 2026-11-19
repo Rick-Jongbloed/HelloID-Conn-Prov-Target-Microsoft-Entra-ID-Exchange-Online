@@ -43,7 +43,7 @@ function Resolve-MS-Entra-ExoError {
                 $httpErrorObj.FriendlyMessage = "$($errorDetailsObject.error.code): $($errorDetailsObject.error.message)"
             }
             elseif ($errorDetailsObject.error.details.message) {
-                $httpErrorObj.FriendlyMessage = "$($errorDetailsObject.error.details.code): $($errorDetailsObject.details.message)"
+                $httpErrorObj.FriendlyMessage = "$($errorDetailsObject.error.details.code): $($errorDetailsObject.error.details.message)"
             }
             else {
                 $httpErrorObj.FriendlyMessage = $httpErrorObj.ErrorDetails
@@ -149,6 +149,23 @@ function Get-MSEntraCertificate {
         $PSCmdlet.ThrowTerminatingError($_)
     }
 }
+function Get-TeamsChannelMembers {
+    # All direct members of a channel, following @odata.nextLink
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$TeamId,
+        [Parameter(Mandatory)][string]$ChannelId,
+        [Parameter(Mandatory)][object]$Headers
+    )
+    $members = [System.Collections.Generic.List[object]]::new()
+    $uri = "https://graph.microsoft.com/v1.0/teams/$($TeamId)/channels/$($ChannelId)/members"
+    do {
+        $response = Invoke-RestMethod -Uri $uri -Headers $Headers -Method 'GET' -Verbose:$false -ErrorAction 'Stop'
+        foreach ($member in @($response.value)) { $members.Add($member) }
+        $uri = $response.'@odata.nextLink'
+    } while (-not [string]::IsNullOrEmpty($uri))
+    Write-Output $members -NoEnumerate
+}
 #endregion functions
 
 try {
@@ -198,7 +215,27 @@ try {
     }
 
     if (-Not($actionContext.DryRun -eq $true)) {
-        $grantedPermission = Invoke-RestMethod @grantPermissionSplatParams
+        try {
+            $grantedPermission = Invoke-RestMethod @grantPermissionSplatParams
+        }
+        catch {
+            $grantError = $_
+            $grantActionMessage = $actionMessage
+            # Already a member of the channel with this role counts as success, any other error is rethrown
+            $actionMessage = "checking if account is already a member of teams channel [$($actionContext.PermissionDisplayName)] with id [$($actionContext.References.Permission.ChannelId)]"
+            $channelMembers = Get-TeamsChannelMembers -TeamId $actionContext.References.Permission.TeamId -ChannelId $actionContext.References.Permission.ChannelId -Headers $headers
+            if ($actionContext.References.Permission.Role -eq "Member") {
+                $existingMember = $channelMembers | Where-Object { $_.userId -eq $actionContext.References.Account -and @($_.roles).Count -eq 0 }
+            }
+            else {
+                $existingMember = $channelMembers | Where-Object { $_.userId -eq $actionContext.References.Account -and @($_.roles) -contains $actionContext.References.Permission.Role }
+            }
+            if (($existingMember | Measure-Object).Count -eq 0) {
+                $actionMessage = $grantActionMessage
+                throw $grantError
+            }
+            Write-Information "Account with AccountReference [$($actionContext.References.Account)] already has role [$($actionContext.References.Permission.Role)] in teams channel [$($actionContext.References.Permission.ChannelId)]"
+        }
 
         $outputContext.success = $true
         $outputContext.AuditLogs.Add([PSCustomObject]@{
@@ -208,7 +245,8 @@ try {
             })
     }
     else {
-        Write-Warning "DryRun: Would grant role [$($actionContext.References.Permission.Role)] teams channel [$($actionContext.References.Permission.ChannelId)] to account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
+        Write-Information "[DryRun] Would grant role [$($actionContext.References.Permission.Role)] teams channel [$($actionContext.References.Permission.ChannelId)] to account with AccountReference: $($actionContext.References.Account | ConvertTo-Json)."
+        $outputContext.success = $true
     }
 }
 catch {

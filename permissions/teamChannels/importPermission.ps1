@@ -43,7 +43,7 @@ function Resolve-MS-Entra-ExoError {
                 $httpErrorObj.FriendlyMessage = "$($errorDetailsObject.error.code): $($errorDetailsObject.error.message)"
             }
             elseif ($errorDetailsObject.error.details.message) {
-                $httpErrorObj.FriendlyMessage = "$($errorDetailsObject.error.details.code): $($errorDetailsObject.details.message)"
+                $httpErrorObj.FriendlyMessage = "$($errorDetailsObject.error.details.code): $($errorDetailsObject.error.details.message)"
             }
             else {
                 $httpErrorObj.FriendlyMessage = $httpErrorObj.ErrorDetails
@@ -208,7 +208,7 @@ function Invoke-MSEntraBatchRequest {
                     $retryCount = 0
                 }
                 catch {
-                    if ($_.Exception.Response.StatusCode -eq 429 -or $_.Exception.Response.StatusCode -eq 504) {
+                    if ([int]$_.Exception.Response.StatusCode -in @(429, 500, 502, 503, 504)) {
                         $retryCount++
                         Write-Warning "Retry [$retryCount] for batch request covering requests [$i..$($i + $batchItems.Count - 1)]"
                         Start-Sleep -Seconds ($retryCount * 5)
@@ -226,12 +226,43 @@ function Invoke-MSEntraBatchRequest {
 
             foreach ($response in $batchResponse.responses) {
                 $itemIndex = $i + [int]$response.id
-                if ($response.status -ge 200 -and $response.status -lt 300) {
-                    $values = [System.Collections.ArrayList]@()
-                    if ($null -ne $response.body.value) {
-                        [void]$values.AddRange(@($response.body.value))
+                $responseBody = $response.body
+                $responseStatus = [int]$response.status
+
+                # Throttled or failed sub-request: retry that request on its own, so the result is never incomplete
+                $subRetryCount = 0
+                while ($responseStatus -in @(429, 500, 502, 503, 504) -and $subRetryCount -lt $maxRetries) {
+                    $subRetryCount++
+                    $retryAfter = [int]"$($response.headers.'Retry-After')"
+                    $waitSeconds = if ($retryAfter -gt 0) { $retryAfter } else { $subRetryCount * 5 }
+                    Write-Warning "Retry [$subRetryCount] for sub-request at index [$itemIndex] (status [$responseStatus]) after [$waitSeconds] seconds"
+                    Start-Sleep -Seconds $waitSeconds
+                    try {
+                        $retrySplatParams = @{
+                            Uri         = "https://graph.microsoft.com/v1.0$($Requests[$itemIndex].Uri)"
+                            Headers     = $Headers
+                            Method      = $Requests[$itemIndex].Method
+                            ContentType = 'application/json; charset=utf-8'
+                            Verbose     = $false
+                            ErrorAction = 'Stop'
+                        }
+                        $responseBody = Invoke-RestMethod @retrySplatParams
+                        $responseStatus = 200
                     }
-                    $nextLink = $response.body.'@odata.nextLink'
+                    catch {
+                        $responseStatus = [int]$_.Exception.Response.StatusCode
+                        if ($responseStatus -notin @(429, 500, 502, 503, 504)) {
+                            throw
+                        }
+                    }
+                }
+
+                if ($responseStatus -ge 200 -and $responseStatus -lt 300) {
+                    $values = [System.Collections.ArrayList]@()
+                    if ($null -ne $responseBody.value) {
+                        [void]$values.AddRange(@($responseBody.value))
+                    }
+                    $nextLink = $responseBody.'@odata.nextLink'
                     while (-not [string]::IsNullOrEmpty($nextLink)) {
                         $paginationSplatParams = @{
                             Uri         = $nextLink
@@ -247,9 +278,14 @@ function Invoke-MSEntraBatchRequest {
                     }
                     $resultsByIndex[$itemIndex] = $values
                 }
-                else {
-                    Write-Warning "Batch sub-request failed for request at index [$itemIndex]: $($response.body.error.message)"
+                elseif ($responseStatus -eq 404) {
+                    # The object was deleted after it was listed
+                    Write-Information "Batch sub-request at index [$itemIndex] returned 404, the object no longer exists"
                     $resultsByIndex[$itemIndex] = @()
+                }
+                else {
+                    # Stop instead of returning an incomplete result
+                    throw "Batch sub-request failed for request [$($Requests[$itemIndex].Uri)] with status [$responseStatus]: $($response.body.error.message)"
                 }
             }
         }
@@ -378,8 +414,10 @@ try {
             $accountsBatchSize = 500
             $batches = 0..($numberOfAccounts - 1) | Group-Object { [math]::Floor($_ / $accountsBatchSize ) }
             foreach ($batch in $batches) {
-                $permission.AccountReferences = [array]($batch.Group | ForEach-Object { @($teamsChannelOwners[$_].userId) })
-                Write-Output $permission
+                # Each batch must be a separate object, otherwise every batch ends up with the account references of the last batch
+                $permissionBatch = $permission.Clone()
+                $permissionBatch.AccountReferences = [array]($batch.Group | ForEach-Object { @($teamsChannelOwners[$_].userId) })
+                Write-Output $permissionBatch
             }
         }
 
@@ -414,8 +452,10 @@ try {
             $batches = 0..($numberOfAccounts - 1) | Group-Object { [math]::Floor($_ / $accountsBatchSize ) }
             foreach ($batch in $batches) {
                 $actionMessage = "processing batch $($batch.Name) of members of teams channel [$($microsoftTeamsChannel.displayName)] with id [$($microsoftTeamsChannel.id)]"
-                $permission.AccountReferences = [array]($batch.Group | ForEach-Object { @($teamsChannelMembers[$_].userId) })
-                Write-Output $permission
+                # Each batch must be a separate object, otherwise every batch ends up with the account references of the last batch
+                $permissionBatch = $permission.Clone()
+                $permissionBatch.AccountReferences = [array]($batch.Group | ForEach-Object { @($teamsChannelMembers[$_].userId) })
+                Write-Output $permissionBatch
             }
         }
     }

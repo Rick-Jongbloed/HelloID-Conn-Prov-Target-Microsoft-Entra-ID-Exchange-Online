@@ -46,7 +46,7 @@ function Resolve-MS-Entra-ExoError {
                 $httpErrorObj.FriendlyMessage = "$($errorDetailsObject.error.code): $($errorDetailsObject.error.message)"
             }
             elseif ($errorDetailsObject.error.details.message) {
-                $httpErrorObj.FriendlyMessage = "$($errorDetailsObject.error.details.code): $($errorDetailsObject.details.message)"
+                $httpErrorObj.FriendlyMessage = "$($errorDetailsObject.error.details.code): $($errorDetailsObject.error.details.message)"
             }
             else {
                 $httpErrorObj.FriendlyMessage = $httpErrorObj.ErrorDetails
@@ -232,7 +232,12 @@ try {
             } -Force
         }
         if ($null -ne $correlatedAccountEntra -and $correlatedAccountExo.Count -eq 0) {
-            throw "An existing MS-Entra account was found, but no mailbox is associated with it. To add a mailbox for this account, you need to assign a license."
+            $correlatedAccountExo = $null
+            Write-Warning 'An existing MS-Entra account was found, but no mailbox is associated with it. To add a mailbox for this account, you need to assign a license.'
+            $outputContext.AuditLogs.Add([PSCustomObject]@{
+                    Message = 'An existing MS-Entra account was found, but no mailbox is associated with it. Enabling Exchange Online skipped'
+                    IsError = $false
+                })
         }
     }
 
@@ -288,7 +293,10 @@ try {
 
                 foreach ($exoAccountProperty in $actionContext.Data.exchangeOnline.PsObject.Properties) {
                     if ($exoAccountProperty.Name -eq 'HiddenFromAddressListsEnabled') {
-                        $splatUpdateExoAccount['HiddenFromAddressListsEnabled'] = [bool]::Parse($exoAccountProperty.Value)
+                        # An empty value is skipped, Set-Mailbox does not accept null
+                        if ($null -ne $exoAccountProperty.Value) {
+                            $splatUpdateExoAccount['HiddenFromAddressListsEnabled'] = [bool]::Parse($exoAccountProperty.Value)
+                        }
                         continue
                     }
                     $splatUpdateExoAccount[$exoAccountProperty.Name] = $exoAccountProperty.Value
@@ -297,7 +305,7 @@ try {
                     $null = Set-Mailbox @splatUpdateExoAccount -Verbose:$false -ErrorAction Stop
                 }
                 else {
-                    $null = Set-Mailbox @splatUpdateExoAccount -Verbose:$false -ErrorAction Stop -WhatIf
+                    Write-Information "[DryRun] Update Exchange Online mailbox with AccountReference [$($actionContext.References.Account)], will be executed during enforcement"
                 }
                 
                 $outputContext.Success = $true
