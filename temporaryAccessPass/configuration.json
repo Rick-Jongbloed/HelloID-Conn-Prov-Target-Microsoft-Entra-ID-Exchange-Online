@@ -46,9 +46,10 @@
   {
     "key": "TemporaryAccessPassLifetime",
     "type": "input",
-    "defaultValue": "",
+    "defaultValue": "4320",
     "templateOptions": {
-      "label": "Temporary Acces Pass Lifetime (m)",
+      "label": "Temporary Access Pass Lifetime (m)",
+      "description": "Lifetime in minutes, e.g. 4320 (3 days) or 5760 (4 days). Must be within the lifetime range of the Temporary Access Pass policy of the tenant.",
       "placeholder": "4320",
       "required": true
     }

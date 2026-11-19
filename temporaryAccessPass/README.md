@@ -68,7 +68,7 @@ The Temporary Access Pass configuration uses the standard MS Entra connection se
 - **AppId**: Application (Client) ID from App Registration. Required: `Yes`.
 - **AppCertificateBase64String**: Base64-encoded certificate for authentication. Required: `Yes`.
 - **AppCertificatePassword**: Password for the certificate. Required: `Yes`.
-- **TemporaryAccessPassLifetime**: Lifetime of the TAP in minutes (e.g., `60` = 1 hour). Must be within the minimum and maximum lifetime of the Temporary Access Pass policy of the tenant (see [Troubleshooting](#troubleshooting)). Required: `Yes`.
+- **TemporaryAccessPassLifetime**: Lifetime of the TAP in minutes (default `4320` = 3 days). Must be within the minimum and maximum lifetime of the Temporary Access Pass policy of the tenant (see [Troubleshooting](#troubleshooting)). Required: `Yes`.
 
 For details on setting up certificate-based authentication, refer to the main connector README and Microsoft's official documentation:
 
@@ -90,8 +90,8 @@ To enable TAP in your HelloID provisioning target:
 
 1. Select the **Temporary Access Pass** option from the available provisioning features
 2. Configure the **TemporaryAccessPassLifetime** parameter with the desired lifetime in minutes, within the lifetime range of the tenant policy:
-   - Example: `60` minutes = 1 hour
-   - Example: `1440` minutes = 1 day (the maximum lifetime of the policy must be raised for this)
+   - Recommended for onboarding with HelloID: `4320` minutes = 3 days (default) or `5760` minutes = 4 days. The new employee then has a few days to sign in for the first time and register a sign-in method.
+   - The default maximum lifetime of the tenant policy is 8 hours: raise the **Maximum lifetime** of the Temporary Access Pass policy to at least the configured lifetime (for example 4 days), see [Troubleshooting](#troubleshooting).
 
 3. Map the `temporaryAccessPass` field to your notification system or audit logs to capture the generated credentials
 
