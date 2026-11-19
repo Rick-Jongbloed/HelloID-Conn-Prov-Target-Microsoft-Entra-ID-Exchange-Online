@@ -40,6 +40,7 @@ Microsoft Entra admin center > **External Identities** > **External collaboratio
 | Error | Meaning | Solution |
 | ----- | ------- | -------- |
 | `Forbidden: Guest invitations not allowed for your company` | Guest invitations are disabled in the external collaboration settings (most restrictive option). | Change **Guest invite settings**, see [Required tenant settings](#required-tenant-settings). |
+| `Forbidden: Guest invitations not allowed for your company`, while the external collaboration settings allow invitations (inviting in the admin center fails as well, for example with *Insufficient privileges to complete the operation* for a Global Administrator) | Microsoft blocks invitations for the whole tenant. This happens often with trial, free and developer tenants. | Only Microsoft support can lift this block. The connector and the app registration are not the cause. |
 | An error that the domain of the e-mail address is not allowed | The domain is blocked by the collaboration restrictions. | Allow the domain in **Collaboration restrictions**. |
 | `403 Forbidden` / `Authorization_RequestDenied` without the message above | The app registration misses `User.Invite.All`, or admin consent is missing. | Add the permission and grant admin consent. |
 | `Set Manager on create is enabled, but no manager account is found ...` | No account with `employeeId` = the manager's external id. The guest is created without manager. | Check that the manager's account has the `employeeId`. |
