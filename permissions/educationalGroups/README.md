@@ -1,20 +1,126 @@
-# Microsoft Teams Educational Class
+# Educational teams (Microsoft Teams for education)
+
+Manages the **members** (for example students) and **owners** (for example teachers) of educational teams in Microsoft Teams, and creates those teams per school year. The scripts work on the Microsoft 365 groups behind the teams via Microsoft Graph; they do not use the Education API (`/education/...`) or School Data Sync.
+
+Use it as a separate target system next to the Entra ID connector, with the same app registration and the extra settings below. The accounts are managed by the Entra ID connector; this target system only correlates them.
+
+## Table of contents
+
+- [Supported features](#supported-features)
+- [How it works](#how-it-works)
+  - [Educational teams and the school year](#educational-teams-and-the-school-year)
+  - [Scripts](#scripts)
+  - [Static permissions](#static-permissions)
+  - [Dynamic permissions (sub permissions)](#dynamic-permissions-sub-permissions)
+  - [Entitlement import](#entitlement-import)
+  - [Resources: creating the teams](#resources-creating-the-teams)
+- [When to use what](#when-to-use-what)
+- [Configuration](#configuration)
+- [Required permissions](#required-permissions)
+- [Remarks](#remarks)
+- [Development resources](#development-resources)
 
 ## Supported features
-
-The following features are available:
 
 | Feature                                   | Supported | Actions                             | Remarks            |
 | ----------------------------------------- | --------- | ----------------------------------- | ------------------ |
 | **Account Lifecycle**                     | ✅         | Correlate                           |                    |
 | **Permissions**                           | ✅         | Retrieve, Grant, Revoke             | Static and Dynamic |
-| **Resources**                             | ✅         | Creation of M365 educational groups |                    |
+| **Resources**                             | ✅         | Creation of educational teams       | Education tenant only |
 | **Entitlement Import: Permissions**       | ✅         | -                                   |                    |
-| **Governance Reconciliation Resolutions** | ✅⚠️        | -                                   |                    |
+| **Governance Reconciliation Resolutions** | ✅⚠️        | -                                   | Permissions only; accounts depend on the Entra ID connector |
 
-### ⚠️ Governance Reconciliation Resolutions
+## How it works
 
-Governance reconciliation is supported for permissions only. Accounts are dependent on the use of the Entra ID connector
+### Educational teams and the school year
+
+A team is in scope when it is a Microsoft 365 group with a team (`resourceProvisioningOptions` contains `Team`) and its display name ends with `_<school year>`. The name convention is:
+
+```
+<prefix>_<code>_<school year>        for example  Klas_1A_2627, Les_WIS-3B_2627
+```
+
+- **prefix**: one of the configured prefixes (`classTeamPrefix`, `lessonTeamPrefix`, `subjectTeamPrefix`).
+- **code**: the code of the class or lesson group from the source system (for example the department external id). Special characters are removed (`Get-SanitizedGroupName`).
+- **school year**: calculated by `Get-SchoolYear` in every script. From August the new school year starts: in November 2026 it is `2627`, in March 2027 also `2627`, from August 2027 `2728`. By default 2 digits per year without separator; `$schoolYearLength` and `$schoolYearSeperator` in the function change this (for example `2026-2027`). Keep these the same in all scripts.
+
+Because the school year is part of the name, the teams of the previous school year are no longer in scope from August: they are no longer listed as permissions and not imported.
+
+### Scripts
+
+| Folder / script | Action |
+| --------------- | ------ |
+| `members/permissions.ps1` and `owners/permissions.ps1` | Lists every team of the current school year as a permission (`Id` = object id of the group) |
+| `members/grantPermission.ps1` | Adds the account as member (`POST /groups/{id}/members/$ref`). Already a member counts as success |
+| `members/revokePermission.ps1` | Removes the account as member (`DELETE /groups/{id}/members/{id}/$ref`) |
+| `owners/grantPermission.ps1` and `owners/revokePermission.ps1` | The same for owners (`/owners`) |
+| `members/subPermissions.ps1` and `owners/subPermissions.ps1` | Grants and revokes teams dynamically, based on the contracts of the person |
+| `members/import.ps1` and `owners/import.ps1` | Entitlement import of the static permissions |
+| `members/importSubPermissions.ps1` and `owners/importSubPermissions.ps1` | Entitlement import of the dynamic permissions |
+| `resources/educationalGroups/withoutActivationButton/resources.ps1` | Creates the teams directly with the `educationClass` template |
+| `resources/educationalGroups/withActivationButton/resources.ps1` | Creates the groups first and upgrades them to an `educationClass` team afterwards |
+
+### Static permissions
+
+`permissions.ps1` lists every team of the current school year as a separate permission. A business rule (or a request in the self-service product) grants a specific team; `grantPermission.ps1` and `revokePermission.ps1` add or remove the account as member or owner of that one team.
+
+### Dynamic permissions (sub permissions)
+
+`subPermissions.ps1` determines the teams from the contracts of the person. For every contract in conditions:
+
+1. The team name is `<classTeamPrefix>_<Department.ExternalId>_<school year>`, for example `Klas_1A_2627`.
+2. The group is looked up by display name. Not found or more than one: an audit log, no grant.
+3. Teams that are desired but not granted yet are granted; teams that were granted before (`CurrentPermissions`) but are no longer desired are revoked. Already a member or already removed counts as success.
+
+One permission in HelloID (for example *EDU Teams - Members*) then covers all teams of the person. When the class of a student changes in the source system, the next update moves the student to the team of the new class.
+
+> [!NOTE]
+> The dynamic scripts use `classTeamPrefix` and `Department.ExternalId`. Adjust these lines when the classes or lesson groups are in another field of the contract, or when lesson or subject teams must be granted dynamically.
+
+### Entitlement import
+
+- `import.ps1` reads all teams of the current school year with their members (or owners) and returns them per team, for the static permissions.
+- `importSubPermissions.ps1` returns the same memberships as sub permissions of one permission (*EDU Teams - Members* / *EDU Teams - Owners*), for the dynamic permissions. It searches the groups with `$search` on the school year in the display name.
+- Both skip the account in `ownerGuid` (the technical owner that creates the teams), so it is not reported as a membership.
+- Use only the import that matches the way the permissions are granted (static or dynamic), otherwise the same memberships are imported twice.
+
+### Resources: creating the teams
+
+The resource scripts create a team for every unique `ExternalId` in the resource data, with the name `<prefix>_<ExternalId>_<school year>`. A team that already exists (same display name) is correlated. At most 200 teams are created per run (`$maximumAmountToCreatePerRun`); at the start of a school year several runs are needed.
+
+| Script | How the team is created | Prefix used |
+| ------ | ----------------------- | ----------- |
+| `withoutActivationButton` | One call: `POST /teams` with the `educationClass` template. The team is directly visible to the students. | `lessonTeamPrefix` |
+| `withActivationButton` | First the Microsoft 365 group (`POST /groups`, with education class settings), then the upgrade to a team with the `educationClass` template (up to 3 attempts). The teacher activates the team before students see it; most schools use this. | `subjectTeamPrefix` |
+
+> [!IMPORTANT]
+> The `educationClass` template and the education settings of the group are only available in a Microsoft 365 **Education** tenant (A1/A3/A5 licenses). In another tenant the resource scripts fail; the permission scripts work in any tenant, because they only use the group and its members and owners.
+
+> [!IMPORTANT]
+> The resource scripts and `subPermissions.ps1` use different prefixes by default (`lessonTeamPrefix` / `subjectTeamPrefix` versus `classTeamPrefix`). When the teams created by a resource script must be granted dynamically, use the same prefix in both scripts.
+
+## When to use what
+
+| Situation | Use |
+| --------- | --- |
+| Students must be member of the team of their class, automatically from the HR or student system | Resources (to create the teams per school year) + `members/subPermissions.ps1` + `members/importSubPermissions.ps1` |
+| Mentors or teachers must be owner of the team of their class | `owners/subPermissions.ps1` (contract of the teacher points to the class) + `owners/importSubPermissions.ps1` |
+| A few fixed teams, or teams that are requested and approved by hand | `permissions.ps1` + `grantPermission.ps1` / `revokePermission.ps1` + `import.ps1` (static) |
+| The school creates the teams itself (for example with School Data Sync) and HelloID only manages memberships | Only the permission scripts; no resource scripts. The team names must follow the name convention above |
+| The teams must not be visible to students before the teacher starts | `withActivationButton` |
+| The teams must be usable directly | `withoutActivationButton` |
+| Not an education tenant | Only the permission scripts, with teams created in another way and named by the convention |
+
+## Configuration
+
+The following settings are required on top of the Entra ID connector configuration (`configuration.json` in this folder).
+
+| Setting | Description | Mandatory |
+| ------- | ----------- | --------- |
+| `classTeamPrefix` | Prefix of the class teams (default `Klas`), used by `subPermissions.ps1` | No |
+| `lessonTeamPrefix` | Prefix of the lesson teams (default `Les`), used by `withoutActivationButton` | No |
+| `subjectTeamPrefix` | Prefix of the subject teams (default `Vak`), used by `withActivationButton` | No |
+| `ownerGuid` | Object id of the Entra ID account that is set as owner when a team is created (a team needs an owner). It is left out of the imports | Yes |
 
 ## Required permissions
 
@@ -35,68 +141,35 @@ API permissions (Microsoft Graph, application) for the resource scripts (`resour
 | `TeamSettings.ReadWrite.All` | Team settings of the educational teams                      |
 | `TeamMember.ReadWrite.All`   | Team membership of the owner                                |
 
-## Configuration
-
-The following extra settings are required to on top of the Entra ID connector configuration.
-
-| Setting       | Description                                                                                                            | Mandatory |
-| ------------- | ---------------------------------------------------------------------------------------------------------------------- | --------- |
-| ClassPrefix   | Prefix for Class Educational Teams (Klassen)                                                                           | No        |
-| LessonPrefix  | Prefix for Lesson Educational Teams (Lessen)                                                                           | No        |
-| SubjectPrefix | Prefix for Subject Educational Teams (Vakken)                                                                          | No        |
-| OwnerGuid     | GUID of user in EntraID which is used to create the groups and set as owner. Owner is mandatory for creating the Teams | Yes       |
-
 ## Remarks
 
-### Performance Issues
+### Performance
 
 > [!IMPORTANT]
-> Due to process duration within Entra ID of creating M365 Groups and Teams with the Educational Class template, some design choices have been made. Groups are created separated from applying the template. When these actions are combined in the resource scripts, HelloID will timeout and groups are not created.
+> Creating Microsoft 365 groups and teams with the `educationClass` template takes time in Entra ID. Therefore `withActivationButton` creates the groups first and upgrades them to teams afterwards; combined in one step HelloID times out and the groups are not created.
 
-### Resources
+### Filter the Entra ID group permissions
 
-Within the connector M365 groups are created with specific settings. These settings are needed to convert the groups to MS Educational Teams. To stay within the performance limits a maximum of groups to be created in one run is set to 200.
+The educational teams are also Microsoft 365 groups, so the `groups` permissions of the Entra ID connector list them as well. Add a filter to the group scripts of the Entra ID connector (for example on the school year in the display name), so a team is managed by one target system only and is not reconciled by both.
 
-Creation of Teams is possible in two ways, with or without an activation button for the teacher. When creating with the availability of an activation button, the Educational Team will be visible to students after a teacher manually activates the Team for use. This is used by most schools.
+### Removing an owner
 
-> [!IMPORTANT]
-> On the start of a new school year multiple runs are necessary before all groups are created. Per run a maximum of 200 groups will be created.
-
-### School year
-
-In all scripts the school year is calculated based on current and next school year. This value is used in the name of the groups and teams and can be used as filter in the permissions shown in the business rules and in other scripts.
-
-### Filter Entra ID permissions
-
-When combining this target connector with the Entra ID connector, it's advised to implement filters in the group-scripts. Otherwise the Educational groups will also be available in the Entra ID permissions. To prevent that groups are available in both targets and are used for reconciliation in both targets, add some filtering.
-
-<!--
-Provide remarks on special aspects of the code or the internal workings of the connector.
-
-**Please ensure to use `###` tags for H3 headings for each remark.**
-
-Example:
-
-### GET Account API Limitation
-- **No GET Endpoint**: The API does not support a GET request to retrieve account details. You may need to use alternative methods or endpoints to access account information, such as using a POST request with appropriate parameters.
-
-### Correlation Based on Email Address
-- **Email Address Correlation**: The connector relies on email addresses to correlate and match records between systems. Ensure that email addresses are accurately maintained and consistent across systems to avoid issues with data synchronization and matching.
--->
+A team always needs an owner. Revoking the last owner of a team fails; the technical owner (`ownerGuid`) prevents this for teams created by the resource scripts.
 
 ## Development resources
 
 ### API endpoints
 
-The following endpoints are used by the connector
+| Endpoint | Description |
+| -------- | ----------- |
+| `/groups` | Listing the Microsoft 365 groups, looking up a team by display name, creating groups (`withActivationButton`) |
+| `/groups/{id}/members` and `/groups/{id}/members/$ref` | Listing, adding and removing members |
+| `/groups/{id}/owners` and `/groups/{id}/owners/$ref` | Listing, adding and removing owners |
+| `/$batch` | Reading the members or owners of many groups in one request (imports) |
+| `/teams` | Listing the teams, creating a team or upgrading a group to a team |
+| `/teamsTemplates('educationClass')` | Template of the educational teams |
 
-| Endpoint                           | Description                                                  |
-| ---------------------------------- | ------------------------------------------------------------ |
-| /users                             | Handle user information                                      |
-| /users/{id}                        | Get or update specific user                                  |
-| /users/{id}/authentication         | Handle authentication method                                 |
-| /users/{id}/manager                | Get, set or remove user's manager                            |
-| /groups                            | Handle group information                                     |
-| /groups/{id}/members               | Get group members                                            |
-| /teamsTemplates('educationalClass) | Template used for creation                                   |
-| /teams                             | To upgrade an M365 created group to a Educational Class team |
+For more information:
+
+- [Create team (Microsoft Graph)](https://learn.microsoft.com/en-us/graph/api/team-post?view=graph-rest-1.0)
+- [Add members to a group](https://learn.microsoft.com/en-us/graph/api/group-post-members?view=graph-rest-1.0) and [Add owners to a group](https://learn.microsoft.com/en-us/graph/api/group-post-owners?view=graph-rest-1.0)
