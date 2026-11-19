@@ -70,7 +70,7 @@ The following features are available:
 | **Account Lifecycle**                     | ✅         | Create, Update, Enable, Disable, Delete                                                      |                                                                    |
 | **Correlate only**                        | ✅         | Correlate                                                                                    | Alternative setup, see [Correlate only mode](#correlate-only-mode) |
 | **Permissions**                           | ✅         | Groups (static and sub permissions), Phone, Email authentication and perUserMfaState methods, Teams channels, educational groups, Exchange Online: shared mailboxes, Exchange groups, calendar folder permissions, out of office, regional configuration | See [Permissions](#permissions)                                     |
-| **Resources**                             | ✅         | Groups, Teams                                                                                | Only available for groups and teams                                |
+| **Resources**                             | ✅         | Groups, Teams, Exchange distribution groups, Exchange shared mailboxes                       |                                                                    |
 | **Uniqueness**                            | ✅         | -                                                                                            |                                                                    |
 | **Entitlement Import: Accounts**          | ✅         | -                                                                                            |                                                                    |
 | **Entitlement Import: Permissions**       | ✅         | Groups, Teams channels, educational groups, shared mailboxes, Exchange groups                | See [Permissions](#permissions)                                     |
@@ -86,8 +86,8 @@ The following features are available:
 | [Phone authentication methods](./permissions/phoneAuthenticationMethods/README.md) | Mobile, alternate mobile and office phone as authentication method      | ✅     | ✅¹     | ❌      | ❌               |
 | [Email authentication method](./permissions/emailAuthenticationMethods/README.md) | Email address as authentication method (SSPR)                            | ✅     | ✅¹     | ❌      | ❌               |
 | [Per-user MFA state](./permissions/perUserMfaState/README.md)                  | Enable or disable per-user MFA (Graph beta)                                 | ✅     | ✅      | ❌      | ❌               |
-| [Shared mailboxes](./permissions/sharedMailboxes/README.md)                    | Full Access, Send As and Send on Behalf on shared mailboxes                 | ✅     | ✅      | ✅      | ❌               |
-| [Exchange groups](./permissions/exchangeGroups/README.md)                      | Membership of distribution groups and mail-enabled security groups          | ✅     | ✅      | ✅      | ❌               |
+| [Shared mailboxes](./permissions/sharedMailboxes/README.md)                    | Full Access, Send As and Send on Behalf on shared mailboxes                 | ✅     | ✅      | ✅      | ✅               |
+| [Exchange groups](./permissions/exchangeGroups/README.md)                      | Membership of distribution groups and mail-enabled security groups          | ✅     | ✅      | ✅      | ✅               |
 | [Calendar folder permission](./permissions/folderPermission/README.md)         | Access right of `Default` on the calendar of the account's mailbox          | ✅     | ❌      | ❌      | ❌               |
 | [Out of office](./permissions/outOfOffice/README.md)                           | Grant turns the out of office reply off, revoke turns it on                 | ✅     | ✅      | ❌      | ❌               |
 | [Regional configuration](./permissions/regionalConfiguration/README.md)        | Language, date/time format and time zone of the account's mailbox           | ✅     | ❌      | ❌      | ❌               |
@@ -148,6 +148,8 @@ The permissions below are needed for the account scripts (`create.ps1`, `update.
 | [permissions/regionalConfiguration](./permissions/regionalConfiguration/README.md)    | Language, date/time format and time zone of the mailbox       | Exchange Online                                     |
 | [resources/groups](./resources/groups/README.md)                                      | Resources: create groups                                      | Graph                                               |
 | [resources/teams](./resources/teams/README.md)                                        | Resources: create teams                                       | Graph                                               |
+| [resources/exchangeGroups](./resources/exchangeGroups/README.md)                      | Resources: create distribution groups                         | Exchange Online                                     |
+| [resources/sharedMailboxes](./resources/sharedMailboxes/README.md)                    | Resources: create shared mailboxes                            | Exchange Online                                     |
 | [temporaryAccessPass](./temporaryAccessPass/README.md)                                | Temporary Access Pass                                         | Graph                                               |
 | [guestInvite](#inviting-guest-accounts)                                               | Invite guest accounts                                         | Graph (`User.Invite.All`)                           |
 

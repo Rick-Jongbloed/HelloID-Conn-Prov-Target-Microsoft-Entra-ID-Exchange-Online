@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file. The format 
 ## [Unreleased]
 
 ### Added
+- **Dynamic Exchange permissions and resources**, ported from the [ExchangeOnline connector](https://github.com/Tools4everBV/HelloID-Conn-Prov-Target-ExchangeOnline) to the Exchange Admin API (no ExchangeOnlineManagement module), with retries within the action deadline and DryRun support:
+  - **resources/exchangeGroups/resources.ps1** and **resources/sharedMailboxes/resources.ps1**: create a distribution group (`dg_<name>`) or shared mailbox (`smb_<name>`) per resource and set `CustomAttribute1` = `ExternalId` (correlation) and `CustomAttribute2` = marker. A run that created the object but could not set the attributes is repaired in the next run (lookup on the e-mail address); creation stops in time and continues in the next run.
+  - **permissions/exchangeGroups/subPermissions.ps1** and **permissions/sharedMailboxes/subPermissions.ps1**: grant and revoke the groups or shared mailbox rights of the departments of the contracts (`CustomAttribute1` = `Department.ExternalId`). For shared mailboxes the reference of the dynamic permission is the right (`FullAccess`, `SendAs`, `SendOnBehalf`); grant and revoke work like the static scripts, including verification.
+  - **subPermissionsImport.ps1** in both folders: entitlement import of the objects with the HelloID marker as sub permissions.
+  - READMEs for the new scripts, and both resource folders in the main README.
 - **permissions/folderPermission**, **permissions/outOfOffice** and **permissions/regionalConfiguration**: ported from the [ExchangeOnline connector](https://github.com/Tools4everBV/HelloID-Conn-Prov-Target-ExchangeOnline/tree/feature-out-of-office) to the Exchange Admin API (beta `InvokeCommand`), so no ExchangeOnlineManagement module is needed. Same style as the shared mailbox scripts: retry on 429, 5xx and timeouts within the action deadline, `X-AnchorMailbox` set to `Oid:<account reference>@<tenant id>`, and DryRun support. Behaviour is the same as the source: folderPermission and regionalConfiguration only have a grant script, the outOfOffice grant disables the reply and the revoke enables it with the message from the custom configuration key `OutOfOfficeReply` (see permissions/outOfOffice/README.md).
 
 ### Changed
