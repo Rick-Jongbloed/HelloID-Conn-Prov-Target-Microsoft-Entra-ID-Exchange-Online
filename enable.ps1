@@ -305,7 +305,7 @@ try {
                     $null = Set-Mailbox @splatUpdateExoAccount -Verbose:$false -ErrorAction Stop
                 }
                 else {
-                    Write-Information "[DryRun] Update Exchange Online mailbox with AccountReference [$($actionContext.References.Account)], will be executed during enforcement"
+                    $null = Set-Mailbox @splatUpdateExoAccount -Verbose:$false -ErrorAction Stop -WhatIf
                 }
                 
                 $outputContext.Success = $true

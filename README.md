@@ -154,6 +154,9 @@ The permissions below are needed for the account scripts (`create.ps1`, `update.
 The Exchange Online permission scripts use the Exchange Online Admin API (REST), not the ExchangeOnlineManagement module. They need `Exchange.ManageAsApp` and the **Exchange Recipient Administrator** role, also when `Exchange Online integration` is disabled for the accounts.
 
 > [!NOTE]
+> Revoking sign-in sessions on disable (`revokeSignInSessionsOnDisable`) is covered by `User.ReadWrite.All`. If you want to use least privileged permissions, `User.RevokeSessions.All` is sufficient for this action.
+
+> [!NOTE]
 > **App registration permissions** depend on the functionality you use. For example, if you do not create teams using a resource script, `Team.Create` is not required.
 
 #### Convert .pfx to base64 string
@@ -182,6 +185,7 @@ The following settings are required to connect to the API.
 | deleteAccount              | Delete the account upon revoking the entitlement.                                                                                                         | No        |
 | setManagerOnCreate         | Assign a manager when an account is created.                                                                                                              | No        |
 | updateManagerOnUpdate      | Update the manager when the account update operation is performed.                                                                                        | No        |
+| revokeSignInSessionsOnDisable | Revoke all active sign-in sessions of the user when the account is disabled. See [Revoke sign-in sessions on disable](#revoke-sign-in-sessions-on-disable).    | No        |
 
 ### Correlation configuration
 
@@ -291,6 +295,16 @@ The properties updated during Delete and Disable actions triggered by reconcilia
 - `accountEnabled = $false`
 - `HiddenFromAddressListsEnabled = $true`  *EXO only
 
+### Revoke sign-in sessions on disable
+
+When `revokeSignInSessionsOnDisable` is enabled, the disable script adds the `RevokeSignInSessions` action as the last action, after `DisableAccountEntra` and `DisableAccountEXO`. A failing revoke therefore never blocks the disable actions. This action calls the Graph API endpoint [`revokeSignInSessions`](https://learn.microsoft.com/en-us/graph/api/user-revokesigninsessions?view=graph-rest-1.0&tabs=http), which invalidates all refresh tokens and session cookies of the user. The user is forced to sign in again on all devices and applications, which fails because the account is disabled.
+
+- The action is only executed when the MS-Entra account is found.
+- The `correlateOnly` disable script also supports this option, see [correlateOnly/README.md](./correlateOnly/README.md#revoke-sign-in-sessions-on-disable).
+
+> [!NOTE]
+> Revoking sessions can take a few minutes to take effect. Access tokens that were already issued remain valid until they expire (by default about one hour).
+
 ### ExO PowerShell module
 
 Within HelloID, version _3.5.1_ of the Exchange Online module is being used. https://www.powershellgallery.com/packages/ExchangeOnlineManagement/3.5.1
@@ -371,6 +385,7 @@ The following endpoints are used by the connector
 | /users                     | Handle user information           |
 | /users/{id}                | Get or update specific user       |
 | /users/{id}/manager        | Get, set or remove user's manager |
+| /users/{id}/revokeSignInSessions | Revoke all sign-in sessions of a user |
 
 The endpoints of the permission scripts are described in the README of each folder, see [Permissions](#permissions).
 

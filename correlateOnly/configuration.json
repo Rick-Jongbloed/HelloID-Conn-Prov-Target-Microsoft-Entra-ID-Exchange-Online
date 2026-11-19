@@ -53,5 +53,15 @@
       "placeholder": "P@ssw0rd!",
       "required": true
     }
+  },
+  {
+    "defaultValue": false,
+    "key": "revokeSignInSessionsOnDisable",
+    "templateOptions": {
+      "description": "Revokes all refresh tokens and session cookies of the user when the account is disabled. Access tokens that were already issued remain valid until they expire (about one hour).",
+      "label": "Revoke active sign in sessions on account disable",
+      "required": false
+    },
+    "type": "checkbox"
   }
 ]

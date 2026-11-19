@@ -248,6 +248,10 @@ try {
         if ($null -ne $correlatedAccountExo -and $actionContext.Configuration.ExchangeOnlineIntegration) {
             $actionList.Add('DisableAccountEXO')
         }
+        # Revoke sessions last, so a failure here does not block the disable actions above
+        if ($actionContext.Configuration.revokeSignInSessionsOnDisable) {
+            $actionList.Add('RevokeSignInSessions')
+        }
     }
     else {
         $actionList.Add('NotFound')
@@ -299,6 +303,33 @@ try {
                 break
             }
 
+            'RevokeSignInSessions' {
+
+                $actionMessage = "revoking sign in sessions of MS-Entra account with AccountReference [$($actionContext.References.Account)]"
+
+                # API docs: https://learn.microsoft.com/en-us/graph/api/user-revokesigninsessions?view=graph-rest-1.0&tabs=http
+                $revokeUserSignInSplatParams = @{
+                    Uri         = "https://graph.microsoft.com/v1.0/users/$($actionContext.References.Account)/revokeSignInSessions"
+                    Headers     = @{'Authorization' = "Bearer $($entraToken)" }
+                    ContentType = 'application/json;charset=utf-8'
+                    Method      = 'POST'
+                    Verbose     = $false
+                    ErrorAction = 'Stop'
+                }
+                if (-not($actionContext.DryRun -eq $true)) {
+                    $null = Invoke-RestMethod @revokeUserSignInSplatParams
+                }
+                else {
+                    Write-Information "Dry run: would revoke sign in sessions of MS-Entra account [$($actionContext.References.Account)]"
+                }
+
+                $outputContext.AuditLogs.Add([PSCustomObject]@{
+                        Message = "Revoking sign in sessions of MS-Entra account [$($actionContext.References.Account)] was successful"
+                        IsError = $false
+                    })
+                break
+            }
+
             'DisableAccountEXO' {
 
                 $actionMessage = "disabling EXO account with AccountReference [$($actionContext.References.Account)]"
@@ -335,7 +366,7 @@ try {
                     $null = Set-Mailbox @splatUpdateExoAccount -Verbose:$false -ErrorAction Stop
                 }
                 else {
-                    Write-Information "[DryRun] Update Exchange Online mailbox with AccountReference [$($actionContext.References.Account)], will be executed during enforcement"
+                    $null = Set-Mailbox @splatUpdateExoAccount -Verbose:$false -ErrorAction Stop -WhatIf
                 }
                 $outputContext.Success = $true
                 $outputContext.AuditLogs.Add([PSCustomObject]@{
