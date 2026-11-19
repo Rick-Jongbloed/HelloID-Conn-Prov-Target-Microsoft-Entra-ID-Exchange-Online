@@ -221,7 +221,7 @@ try {
         }
         # Get Entra account on correlation field
         $actionMessage = "querying MS-Entra account on correlation field where [$correlationField] = [$($correlationValue)]"
-        $selectPropertiesToGetUser = ($outputContext.Data | Select-Object * -ExcludeProperty ExchangeOnline, managerId ).PSObject.Properties.Name -join ','
+        $selectPropertiesToGetUser = 'id,' + (($outputContext.Data | Select-Object * -ExcludeProperty ExchangeOnline, managerId ).PSObject.Properties.Name -join ',')
         $splatGetEntraUser = @{
             Uri     = "https://graph.microsoft.com/v1.0/users?`$filter=$correlationField eq '$([uri]::EscapeDataString((("$correlationValue") -replace "'", "''")))'&`$select=$selectPropertiesToGetUser"
             Method  = 'GET'
@@ -234,7 +234,7 @@ try {
         elseif ($correlatedAccountEntra.Count -eq 0) {
             # Get Entra account on Fallback field to handle ExchangeOnlineIntegration where the correlation field is not yet populated
             $actionMessage = "querying MS-Entra account on fallback field where [$entraMailboxFallbackLookupProperty] = [$($entraMailboxFallbackLookupPropertyValue)]"
-            $selectPropertiesToGetUser = ($outputContext.Data | Select-Object * -ExcludeProperty ExchangeOnline, managerId ).PSObject.Properties.Name -join ','
+            $selectPropertiesToGetUser = 'id,' + (($outputContext.Data | Select-Object * -ExcludeProperty ExchangeOnline, managerId ).PSObject.Properties.Name -join ',')
             $splatGetEntraUser = @{
                 Uri     = "https://graph.microsoft.com/v1.0/users?`$filter=$entraMailboxFallbackLookupProperty eq '$([uri]::EscapeDataString((("$entraMailboxFallbackLookupPropertyValue") -replace "'", "''")))'&`$select=$selectPropertiesToGetUser"
                 Method  = 'GET'
