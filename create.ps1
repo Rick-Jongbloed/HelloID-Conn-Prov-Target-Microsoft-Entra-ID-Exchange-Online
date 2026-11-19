@@ -376,7 +376,7 @@ try {
                 $splatCreateParams = @{
                     Uri         = 'https://graph.microsoft.com/v1.0/users?$select=*'
                     Method      = 'POST'
-                    Body        = ($actionContext.Data | Select-Object * -ExcludeProperty exchangeOnline | ConvertTo-Json -Depth 10)
+                    Body        = ($actionContext.Data | Select-Object * -ExcludeProperty exchangeOnline, managerId | ConvertTo-Json -Depth 10)
                     Headers     = @{'Authorization' = "Bearer $($entraToken)" }
                     ContentType = 'application/json;charset=utf-8'
                 }
@@ -477,7 +477,7 @@ try {
             'UpdateAccountEntra' {
                 $actionMessage = "updating created MS-Entra account with AccountReference [$($outputContext.AccountReference)]"
                 $bodyUpdateAccountEntra = @{}
-                foreach ($entraAccountProperty in ($actionContext.Data | Select-Object * -ExcludeProperty ExchangeOnline, passwordProfile).PsObject.Properties ) {
+                foreach ($entraAccountProperty in ($actionContext.Data | Select-Object * -ExcludeProperty ExchangeOnline, passwordProfile, managerId).PsObject.Properties ) {
                     $bodyUpdateAccountEntra["$($entraAccountProperty.Name)"] = $entraAccountProperty.Value
                 }
                 $bodyUpdateAccountEntra['id'] = $outputContext.AccountReference

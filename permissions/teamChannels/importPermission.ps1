@@ -25,7 +25,10 @@ function Resolve-MS-Entra-ExoError {
 
         try {
             if (-not [string]::IsNullOrEmpty($ErrorObject.ErrorDetails.Message)) {
-                $httpErrorObj.ErrorDetails = $ErrorObject.ErrorDetails.Message | ConvertFrom-Json
+                $parsedErrorDetails = $ErrorObject.ErrorDetails.Message | ConvertFrom-Json
+                if ($null -ne $parsedErrorDetails) {
+                    $httpErrorObj.ErrorDetails = $parsedErrorDetails
+                }
             }
             elseif ($ErrorObject.Exception.GetType().FullName -eq 'System.Net.WebException') {
                 if ($null -ne $ErrorObject.Exception.Response) {
@@ -210,8 +213,11 @@ function Invoke-MSEntraBatchRequest {
                 catch {
                     if ([int]$_.Exception.Response.StatusCode -in @(429, 500, 502, 503, 504)) {
                         $retryCount++
-                        Write-Warning "Retry [$retryCount] for batch request covering requests [$i..$($i + $batchItems.Count - 1)]"
-                        Start-Sleep -Seconds ($retryCount * 5)
+                        # Wait for the Retry-After of the response when present, otherwise 5, 10, 15 seconds
+                        $retryAfterSeconds = try { [int]"$($_.Exception.Response.Headers.GetValues('Retry-After') | Select-Object -First 1)" } catch { 0 }
+                        $waitSeconds = if ($retryAfterSeconds -gt 0) { $retryAfterSeconds } else { $retryCount * 5 }
+                        Write-Warning "Retry [$retryCount] for batch request covering requests [$i..$($i + $batchItems.Count - 1)] after [$waitSeconds] seconds"
+                        Start-Sleep -Seconds $waitSeconds
                         continue
                     }
                     else {
@@ -272,7 +278,27 @@ function Invoke-MSEntraBatchRequest {
                             Verbose     = $false
                             ErrorAction = 'Stop'
                         }
-                        $paginationResponse = Invoke-RestMethod @paginationSplatParams
+                        # Retry throttled or failed pagination calls, so the result is never incomplete
+                        $paginationRetryCount = 0
+                        $paginationDone = $false
+                        while (-not $paginationDone) {
+                            try {
+                                $paginationResponse = Invoke-RestMethod @paginationSplatParams
+                                $paginationDone = $true
+                            }
+                            catch {
+                                if ([int]$_.Exception.Response.StatusCode -in @(429, 500, 502, 503, 504) -and $paginationRetryCount -lt $maxRetries) {
+                                    $paginationRetryCount++
+                                    $retryAfterSeconds = try { [int]"$($_.Exception.Response.Headers.GetValues('Retry-After') | Select-Object -First 1)" } catch { 0 }
+                                    $waitSeconds = if ($retryAfterSeconds -gt 0) { $retryAfterSeconds } else { $paginationRetryCount * 5 }
+                                    Write-Warning "Retry [$paginationRetryCount] for pagination call of request at index [$itemIndex] after [$waitSeconds] seconds"
+                                    Start-Sleep -Seconds $waitSeconds
+                                }
+                                else {
+                                    throw
+                                }
+                            }
+                        }
                         [void]$values.AddRange(@($paginationResponse.value))
                         $nextLink = $paginationResponse.'@odata.nextLink'
                     }

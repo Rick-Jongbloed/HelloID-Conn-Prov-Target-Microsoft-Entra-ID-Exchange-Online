@@ -25,7 +25,10 @@ function Resolve-MS-Entra-ExoError {
 
         try {
             if (-not [string]::IsNullOrEmpty($ErrorObject.ErrorDetails.Message)) {
-                $httpErrorObj.ErrorDetails = $ErrorObject.ErrorDetails.Message | ConvertFrom-Json
+                $parsedErrorDetails = $ErrorObject.ErrorDetails.Message | ConvertFrom-Json
+                if ($null -ne $parsedErrorDetails) {
+                    $httpErrorObj.ErrorDetails = $parsedErrorDetails
+                }
             }
             elseif ($ErrorObject.Exception.GetType().FullName -eq 'System.Net.WebException') {
                 if ($null -ne $ErrorObject.Exception.Response) {

@@ -265,7 +265,7 @@ try {
     $actionMessage = 'verifying if a MS-Entra-Exo account exists'
     try {
         $correlatedAccountEntra = $null
-        $selectPropertiesToGetUser = $selectPropertiesToGetUser = 'id,' + (($outputContext.Data | Select-Object * -ExcludeProperty ExchangeOnline ).PSObject.Properties.Name -join ',')
+        $selectPropertiesToGetUser = $selectPropertiesToGetUser = 'id,' + (($outputContext.Data | Select-Object * -ExcludeProperty ExchangeOnline, managerId ).PSObject.Properties.Name -join ',')
         $splatGetEntraUser = @{
             Uri     = "https://graph.microsoft.com/v1.0/users/$($actionContext.References.Account)?`$select=$selectPropertiesToGetUser"
             Method  = 'GET'
@@ -332,7 +332,7 @@ try {
     # Compare Entra Account
     if ($null -ne $correlatedAccountEntra -and -not[String]::IsNullOrEmpty($actionContext.Data)) {
         $actionMessage = 'Compare Entra Account'
-        $actionContextDataFiltered = $actionContext.Data | Select-Object * -ExcludeProperty passwordProfile*, exchangeOnline*
+        $actionContextDataFiltered = $actionContext.Data | Select-Object * -ExcludeProperty passwordProfile*, exchangeOnline*, managerId
         $splatComparePropertiesEntra = @{
             ReferenceObject  = @((ConvertTo-FlatObject -Object $correlatedAccountEntra).PSObject.Properties)
             DifferenceObject = @((ConvertTo-FlatObject -Object $actionContextDataFiltered).PSObject.Properties)
