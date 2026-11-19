@@ -156,10 +156,10 @@ try {
 	Write-Information 'Verifying if a Microsoft Entra account exists'
     
 
-	$tapLifetimeInput = [string]$actionContext.Configuration.TemporaryAccesPassLifetime
+	$tapLifetimeInput = [string]$actionContext.Configuration.TemporaryAccessPassLifetime
 	$tapLifetime = 0
 	if (-not [int]::TryParse($tapLifetimeInput.Trim(), [ref]$tapLifetime) -or $tapLifetime -le 0) {
-		throw "TemporaryAccesPassLifetime [$tapLifetimeInput] is not a valid positive number."
+		throw "TemporaryAccessPassLifetime [$tapLifetimeInput] is not a valid positive number."
 	}
 
 	$bodyTAP = @{

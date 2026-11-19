@@ -44,7 +44,7 @@
     "type": "input"
   },
   {
-    "key": "TemporaryAccesPassLifetime",
+    "key": "TemporaryAccessPassLifetime",
     "type": "input",
     "defaultValue": "",
     "templateOptions": {

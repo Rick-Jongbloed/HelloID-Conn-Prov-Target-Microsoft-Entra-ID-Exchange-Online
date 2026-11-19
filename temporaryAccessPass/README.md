@@ -68,7 +68,7 @@ The Temporary Access Pass configuration uses the standard MS Entra connection se
 - **AppId**: Application (Client) ID from App Registration. Required: `Yes`.
 - **AppCertificateBase64String**: Base64-encoded certificate for authentication. Required: `Yes`.
 - **AppCertificatePassword**: Password for the certificate. Required: `Yes`.
-- **TemporaryAccesPassLifetime**: Lifetime of the TAP in minutes (e.g., `60` = 1 hour). Must be within the minimum and maximum lifetime of the Temporary Access Pass policy of the tenant (see [Troubleshooting](#troubleshooting)). Required: `Yes`. Note: the key in `configuration.json` is spelled `TemporaryAccesPassLifetime`.
+- **TemporaryAccessPassLifetime**: Lifetime of the TAP in minutes (e.g., `60` = 1 hour). Must be within the minimum and maximum lifetime of the Temporary Access Pass policy of the tenant (see [Troubleshooting](#troubleshooting)). Required: `Yes`.
 
 For details on setting up certificate-based authentication, refer to the main connector README and Microsoft's official documentation:
 
@@ -89,7 +89,7 @@ The Temporary Access Pass mapping includes the following fields:
 To enable TAP in your HelloID provisioning target:
 
 1. Select the **Temporary Access Pass** option from the available provisioning features
-2. Configure the **TemporaryAccesPassLifetime** parameter with the desired lifetime in minutes, within the lifetime range of the tenant policy:
+2. Configure the **TemporaryAccessPassLifetime** parameter with the desired lifetime in minutes, within the lifetime range of the tenant policy:
    - Example: `60` minutes = 1 hour
    - Example: `1440` minutes = 1 day (the maximum lifetime of the policy must be raised for this)
 
@@ -139,7 +139,7 @@ The Temporary Access Pass must be enabled in the tenant before the connector can
 | Error | Meaning | Solution |
 | ----- | ------- | -------- |
 | `badRequest: Converged UserCredentialPolicy does not allow creating or updating ...` | The Temporary Access Pass method is disabled in the Authentication methods policy of the tenant, or the user is not in a group the method is enabled for. | Microsoft Entra admin center > **Protection** > **Authentication methods** > **Policies** > **Temporary Access Pass**: enable it and include all users or a group that contains the users. |
-| `badRequest` about the lifetime | `TemporaryAccesPassLifetime` is outside the minimum and maximum lifetime of the policy (default 1 hour minimum, 8 hours maximum). | Change `TemporaryAccesPassLifetime`, or the lifetime range in the policy (**Configure** tab of the Temporary Access Pass policy; at most 30 days). |
+| `badRequest` about the lifetime | `TemporaryAccessPassLifetime` is outside the minimum and maximum lifetime of the policy (default 1 hour minimum, 8 hours maximum). | Change `TemporaryAccessPassLifetime`, or the lifetime range in the policy (**Configure** tab of the Temporary Access Pass policy; at most 30 days). |
 | `badRequest` about one-time use | The connector requests a one-time pass (`isUsableOnce = true`). This is refused when the policy only allows passes that can be used more than once. | Set **Require one-time use** in the policy to *Yes*, or to *No* (both types allowed). |
 | `403 Forbidden` | The app registration misses `UserAuthenticationMethod.ReadWrite.All`, or admin consent is missing. | Add the permission and grant admin consent. |
 
