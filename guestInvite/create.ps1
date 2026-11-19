@@ -203,12 +203,12 @@ try {
                     })
             }
         }
-    }
-    else {
-        $outputContext.AuditLogs.Add([PSCustomObject]@{
-                Message = 'Set Manager on create is enabled, but no manager externalId is found on the person object. Skipping manager assignment.'
-                IsError = $false
-            })
+        else {
+            $outputContext.AuditLogs.Add([PSCustomObject]@{
+                    Message = 'Set Manager on create is enabled, but no manager externalId is found on the person object. Skipping manager assignment.'
+                    IsError = $false
+                })
+        }
     }
 
     $actionList = [System.Collections.Generic.list[string]]::new()
