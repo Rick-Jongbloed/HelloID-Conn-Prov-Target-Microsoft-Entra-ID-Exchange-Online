@@ -18,6 +18,7 @@
     - [Temporary Access Pass Lifecycle](#temporary-access-pass-lifecycle)
     - [Go-live and active sessions](#go-live-and-active-sessions)
     - [Script flow](#script-flow)
+  - [Troubleshooting](#troubleshooting)
   - [Notifications](#Notifications)
     - [Minimal notification template](#minimal-notification-template)
     - [Notification variables](#notification-variables)
@@ -67,7 +68,7 @@ The Temporary Access Pass configuration uses the standard MS Entra connection se
 - **AppId**: Application (Client) ID from App Registration. Required: `Yes`.
 - **AppCertificateBase64String**: Base64-encoded certificate for authentication. Required: `Yes`.
 - **AppCertificatePassword**: Password for the certificate. Required: `Yes`.
-- **TemporaryAccessPassLifetime**: Lifetime of the TAP in minutes (e.g., `43200` = 30 days). Required: `Yes`.
+- **TemporaryAccesPassLifetime**: Lifetime of the TAP in minutes (e.g., `60` = 1 hour). Must be within the minimum and maximum lifetime of the Temporary Access Pass policy of the tenant (see [Troubleshooting](#troubleshooting)). Required: `Yes`. Note: the key in `configuration.json` is spelled `TemporaryAccesPassLifetime`.
 
 For details on setting up certificate-based authentication, refer to the main connector README and Microsoft's official documentation:
 
@@ -88,9 +89,9 @@ The Temporary Access Pass mapping includes the following fields:
 To enable TAP in your HelloID provisioning target:
 
 1. Select the **Temporary Access Pass** option from the available provisioning features
-2. Configure the **TemporaryAccessPassLifetime** parameter with the desired lifetime in minutes:
-   - Example: `43200` minutes = 30 days
-   - Example: `1440` minutes = 1 day
+2. Configure the **TemporaryAccesPassLifetime** parameter with the desired lifetime in minutes, within the lifetime range of the tenant policy:
+   - Example: `60` minutes = 1 hour
+   - Example: `1440` minutes = 1 day (the maximum lifetime of the policy must be raised for this)
 
 3. Map the `temporaryAccessPass` field to your notification system or audit logs to capture the generated credentials
 
@@ -102,7 +103,7 @@ To enable TAP in your HelloID provisioning target:
 ### Temporary Access Pass Lifecycle
 
 - **Generation**: A TAP is generated when the Enable action is triggered during provisioning
-- **Validity**: The credential remains valid for the configured lifetime (default: 43200 minutes / 30 days)
+- **Validity**: The credential remains valid for the configured lifetime
 - **Single-Use**: By default, the TAP is configured as single-use, meaning it can only be used once for authentication
 - **Retrieval**: The generated TAP value is returned in the `temporaryAccessPass` field and can be included in notifications
 
@@ -130,6 +131,22 @@ The Temporary Access Pass Enable operation follows this process:
 4. **TAP Creation**: Calls the Microsoft Graph API to create a new Temporary Access Pass for the user
 5. **Credential Return**: Returns the generated TAP credential in the provisioning context
 6. **Notification**: The TAP is made available for inclusion in provisioning notifications
+
+## Troubleshooting
+
+The Temporary Access Pass must be enabled in the tenant before the connector can issue one. This is a setting of the tenant, not an API permission of the app registration.
+
+| Error | Meaning | Solution |
+| ----- | ------- | -------- |
+| `badRequest: Converged UserCredentialPolicy does not allow creating or updating ...` | The Temporary Access Pass method is disabled in the Authentication methods policy of the tenant, or the user is not in a group the method is enabled for. | Microsoft Entra admin center > **Protection** > **Authentication methods** > **Policies** > **Temporary Access Pass**: enable it and include all users or a group that contains the users. |
+| `badRequest` about the lifetime | `TemporaryAccesPassLifetime` is outside the minimum and maximum lifetime of the policy (default 1 hour minimum, 8 hours maximum). | Change `TemporaryAccesPassLifetime`, or the lifetime range in the policy (**Configure** tab of the Temporary Access Pass policy; at most 30 days). |
+| `badRequest` about one-time use | The connector requests a one-time pass (`isUsableOnce = true`). This is refused when the policy only allows passes that can be used more than once. | Set **Require one-time use** in the policy to *Yes*, or to *No* (both types allowed). |
+| `403 Forbidden` | The app registration misses `UserAuthenticationMethod.ReadWrite.All`, or admin consent is missing. | Add the permission and grant admin consent. |
+
+For more information:
+
+- [Configure a Temporary Access Pass in Microsoft Entra ID](https://learn.microsoft.com/en-us/entra/identity/authentication/howto-authentication-temporary-access-pass)
+- [temporaryAccessPassAuthenticationMethodConfiguration resource type](https://learn.microsoft.com/en-us/graph/api/resources/temporaryaccesspassauthenticationmethodconfiguration?view=graph-rest-1.0) (the policy settings in Microsoft Graph)
 
 ## Notifications
 
