@@ -21,6 +21,7 @@ All notable changes to this project will be documented in this file. The format 
 - **permissions/exchangeGroups/grantPermission.ps1** and **revokePermission.ps1**: the account reference is validated and trimmed like in the shared mailbox scripts, and DryRun is checked with `-ne $true`.
 
 ### Fixed
+- **resources/educationalGroups/withoutActivationButton/resources.ps1**: the counter of created teams was never raised, so the maximum of 200 teams per run (`$maximumAmountToCreatePerRun`) was not applied and the audit log always said "Created [0]". Found with the lifecycle test.
 - **guestInvite/create.ps1**: the audit log "Set Manager on create is enabled, but no manager externalId is found on the person object" was added when `setManagerOnCreate` was *disabled* (the `else` belonged to the wrong `if`). It is now added only when the option is enabled and the person has no manager. Found with a live test.
 - **Entra ID scripts**: the fixes of [2.8.1](#281---2026-11-19) are included (merged from main).
 - **permissions/sharedMailboxes/importPermission.ps1**: the permissions are retrieved with the `ExternalDirectoryObjectId` of the shared mailbox (like grant and revoke) instead of `Identity`, which is the name of the mailbox. A name that also matches a group or contact failed with status 409 and stopped the import; two shared mailboxes with the same name got each other's permissions. Reported by Remco.

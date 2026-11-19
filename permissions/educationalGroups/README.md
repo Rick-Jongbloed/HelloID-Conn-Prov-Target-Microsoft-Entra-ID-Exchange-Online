@@ -26,7 +26,7 @@ Use it as a separate target system next to the Entra ID connector, with the same
 | ----------------------------------------- | --------- | ----------------------------------- | ------------------ |
 | **Account Lifecycle**                     | ✅         | Correlate                           |                    |
 | **Permissions**                           | ✅         | Retrieve, Grant, Revoke             | Static and Dynamic |
-| **Resources**                             | ✅         | Creation of educational teams       | Education tenant only |
+| **Resources**                             | ✅         | Creation of educational teams       | `withActivationButton`: education tenant only |
 | **Entitlement Import: Permissions**       | ✅         | -                                   |                    |
 | **Governance Reconciliation Resolutions** | ✅⚠️        | -                                   | Permissions only; accounts depend on the Entra ID connector |
 
@@ -94,7 +94,7 @@ The resource scripts create a team for every unique `ExternalId` in the resource
 | `withActivationButton` | First the Microsoft 365 group (`POST /groups`, with education class settings), then the upgrade to a team with the `educationClass` template (up to 3 attempts). The teacher activates the team before students see it; most schools use this. | `subjectTeamPrefix` |
 
 > [!IMPORTANT]
-> The `educationClass` template and the education settings of the group are only available in a Microsoft 365 **Education** tenant (A1/A3/A5 licenses). In another tenant the resource scripts fail; the permission scripts work in any tenant, because they only use the group and its members and owners.
+> `withActivationButton` sets the education property `Education_ObjectType` on the group, which exists only in a Microsoft 365 **Education** tenant (A1/A3/A5 licenses). In another tenant the group is refused with *The following extension properties are not available: extension_..._Education_ObjectType*. `withoutActivationButton` (the `educationClass` template only) also worked in a test tenant without education licenses. The permission scripts work in any tenant, because they only use the group and its members and owners.
 
 > [!IMPORTANT]
 > The resource scripts and `subPermissions.ps1` use different prefixes by default (`lessonTeamPrefix` / `subjectTeamPrefix` versus `classTeamPrefix`). When the teams created by a resource script must be granted dynamically, use the same prefix in both scripts.
@@ -109,7 +109,7 @@ The resource scripts create a team for every unique `ExternalId` in the resource
 | The school creates the teams itself (for example with School Data Sync) and HelloID only manages memberships | Only the permission scripts; no resource scripts. The team names must follow the name convention above |
 | The teams must not be visible to students before the teacher starts | `withActivationButton` |
 | The teams must be usable directly | `withoutActivationButton` |
-| Not an education tenant | Only the permission scripts, with teams created in another way and named by the convention |
+| Not an education tenant | The permission scripts, and `withoutActivationButton` to create the teams (or teams created in another way, named by the convention) |
 
 ## Configuration
 

@@ -335,6 +335,8 @@ try {
                     if (-Not($actionContext.DryRun -eq $true)) {
                         $createdTeam = Invoke-RestMethod @createGroupSplatParams
 
+                        $maxCreatedGroups += 1
+
                         $outputContext.AuditLogs.Add([PSCustomObject]@{
                                 Action  = "CreateResource"
                                 Message = "Created team with name [$($teamName)]."
