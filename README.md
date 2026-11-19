@@ -373,6 +373,7 @@ See [correlateOnly/README.md](./correlateOnly/README.md) for the setup instructi
 - Manager can be set of an invited guest but is not based on a manager reference. The manager is searched by the corresponding `employeeId`, cause mostly the manager reference is not available as a `GuestInvited` account.
 - User credentials and e-mailaddress are based on an external e-mailaddress of the employee
 - Additional application permissions are required: `User.Invite.All`: Invite guest users to the organization.
+- The external collaboration settings of the tenant must allow guest invitations. See [guestInvite/README.md](./guestInvite/README.md) for the settings and troubleshooting.
 
 ## Development resources
 
