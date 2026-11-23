@@ -17,7 +17,7 @@
 
 - When setting the attributes failed in an earlier run, the next run finds the distribution group on its e-mail address and sets them (no second distribution group).
 - An e-mail address used by an object with another `CustomAttribute1`, or more than one distribution group with the same `CustomAttribute1`: an error, nothing is created for that resource.
-- At most `$maximumAmountToCreatePerRun` (50) per run and within `$maximumRuntimeSeconds` (25); the remaining resources are created in the next run. Creating a group takes a few seconds.
+- At most `$maximumAmountToCreatePerRun` (50) per run; the remaining resources are created in the next run. Resource scripts are not bound to the 30-second limit of an action; `$maximumRuntimeSeconds` (900) is only a safety limit.
 - DryRun (preview) creates nothing and logs what would be created.
 - Distribution groups are never renamed or removed by this script.
 

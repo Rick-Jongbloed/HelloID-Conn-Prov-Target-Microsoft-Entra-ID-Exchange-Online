@@ -17,8 +17,9 @@ $markerValue = 'HelloID Dynamic Distribution Group'
 # Prefix of the name and e-mail address, for example dg_Sales -> dg_Sales@contoso.com
 $namePrefix = 'dg_'
 
-# Time limit of this run. Resources that are not processed within this time are processed in the next run.
-$maximumRuntimeSeconds = 25
+# Resource scripts are not bound to the 30-second limit of an action. This is only a safety limit of one run:
+# resources that are not processed within this time are processed in the next run.
+$maximumRuntimeSeconds = 900
 # Maximum number of distribution groups created per run
 $maximumAmountToCreatePerRun = 50
 
@@ -406,8 +407,9 @@ function Invoke-ExOAdminCommand {
             catch {
                 $retryDelay = Get-ExORetryDelay -ErrorRecord $_ -Attempt $attempt -Deadline $Deadline
                 $errorText = "$($_.Exception.Message) $($_.ErrorDetails.Message)"
+                # At most 20 attempts (about one minute) for an object that is not found yet
                 if ($retryDelay -lt 0 -and -not [string]::IsNullOrEmpty($RetryOnPattern) -and $errorText -match $RetryOnPattern -and
-                    [datetime]::UtcNow.AddSeconds(8) -lt $Deadline) {
+                    $attempt -lt 20 -and [datetime]::UtcNow.AddSeconds(8) -lt $Deadline) {
                     $retryDelay = 3000
                 }
                 if ($retryDelay -lt 0) {
