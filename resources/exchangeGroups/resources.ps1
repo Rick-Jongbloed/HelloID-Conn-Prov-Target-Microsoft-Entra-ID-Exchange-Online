@@ -17,9 +17,9 @@ $markerValue = 'HelloID Dynamic Distribution Group'
 # Prefix of the name and e-mail address, for example dg_Sales -> dg_Sales@contoso.com
 $namePrefix = 'dg_'
 
-# Resource scripts are not bound to the 30-second limit of an action. This is only a safety limit of one run:
-# resources that are not processed within this time are processed in the next run.
-$maximumRuntimeSeconds = 900
+# Time for one Exchange command, including its retries. Resource scripts are not bound to the 30-second limit of an
+# action, so there is no time limit for the run itself.
+$requestTimeoutSeconds = 120
 # Maximum number of distribution groups created per run
 $maximumAmountToCreatePerRun = 50
 
@@ -436,8 +436,6 @@ function Invoke-ExOAdminCommand {
 #endregion Functions
 
 #region script
-$deadline = [datetime]::UtcNow.AddSeconds($maximumRuntimeSeconds)
-
 try {
     $actionMessage = 'authenticating to the Exchange Admin API'
     $certificate = Get-MSEntraCertificate
@@ -464,7 +462,7 @@ try {
         Filter     = "IsDirSynced -eq 'False'"
         ResultSize = 'Unlimited'
     }
-    $existingObjects = Invoke-ExOAdminCommand -Authorization $exoAuthorization -TenantID $tenantId -CmdletName 'Get-DistributionGroup' -Parameters $listParameters -Select "ExchangeObjectId,DisplayName,PrimarySmtpAddress,$($correlationField),$($markerField)" -Deadline $deadline
+    $existingObjects = Invoke-ExOAdminCommand -Authorization $exoAuthorization -TenantID $tenantId -CmdletName 'Get-DistributionGroup' -Parameters $listParameters -Select "ExchangeObjectId,DisplayName,PrimarySmtpAddress,$($correlationField),$($markerField)" -Deadline ([datetime]::UtcNow.AddSeconds($requestTimeoutSeconds))
 
     # Lookups on the correlation field and on the e-mail address
     $objectsByCorrelation = @{}
@@ -532,8 +530,8 @@ try {
             continue
         }
 
-        # Stop in time; the remaining resources are processed in the next run
-        if ($createdCount -ge $maximumAmountToCreatePerRun -or [datetime]::UtcNow.AddSeconds(10) -gt $deadline) {
+        # The remaining resources are processed in the next run
+        if ($createdCount -ge $maximumAmountToCreatePerRun) {
             $skippedCount++
             continue
         }
@@ -555,7 +553,7 @@ try {
                 continue
             }
 
-            [void](Invoke-ExOAdminCommand -Authorization $exoAuthorization -TenantID $tenantId -CmdletName 'New-DistributionGroup' -Parameters $newParameters -Select 'DisplayName,PrimarySmtpAddress' -Deadline $deadline)
+            [void](Invoke-ExOAdminCommand -Authorization $exoAuthorization -TenantID $tenantId -CmdletName 'New-DistributionGroup' -Parameters $newParameters -Select 'DisplayName,PrimarySmtpAddress' -Deadline ([datetime]::UtcNow.AddSeconds($requestTimeoutSeconds)))
             $createdCount++
             $outputContext.AuditLogs.Add([PSCustomObject]@{
                     Action  = 'CreateResource'
@@ -569,7 +567,7 @@ try {
         }
 
         # The correlation and marker fields cannot be set with New-DistributionGroup. A new object is not always found
-        # directly after creation, so 'not found' is retried until the deadline.
+        # directly after creation, so 'not found' is retried (at most 20 times).
         # Docs: https://learn.microsoft.com/en-us/powershell/module/exchange/set-distributiongroup
         $actionMessage = "setting [$($correlationField)] and [$($markerField)] on distribution group [$($primarySmtpAddress)]"
         $setParameters = @{
@@ -578,7 +576,7 @@ try {
             $markerField      = $markerValue
         }
         try {
-            [void](Invoke-ExOAdminCommand -Authorization $exoAuthorization -TenantID $tenantId -CmdletName 'Set-DistributionGroup' -Parameters $setParameters -Deadline $deadline -RetryOnPattern "couldn't be found|ManagementObjectNotFound|isn't found|not found")
+            [void](Invoke-ExOAdminCommand -Authorization $exoAuthorization -TenantID $tenantId -CmdletName 'Set-DistributionGroup' -Parameters $setParameters -Deadline ([datetime]::UtcNow.AddSeconds($requestTimeoutSeconds)) -RetryOnPattern "couldn't be found|ManagementObjectNotFound|isn't found|not found")
             $outputContext.AuditLogs.Add([PSCustomObject]@{
                     Action  = 'CreateResource'
                     Message = "Set [$($correlationField)] = [$($correlationValue)] and [$($markerField)] = [$($markerValue)] on distribution group [$($primarySmtpAddress)]."
@@ -596,7 +594,7 @@ try {
     }
 
     if ($skippedCount -gt 0) {
-        Write-Warning "$($skippedCount) resource(s) not processed in this run because of the time limit or the maximum per run ($($maximumAmountToCreatePerRun)); they are processed in the next run."
+        Write-Warning "$($skippedCount) resource(s) not processed in this run because of the maximum per run ($($maximumAmountToCreatePerRun)); they are processed in the next run."
     }
     Write-Information "Resources: $($resourceData.Count), created: $($createdCount), remaining for the next run: $($skippedCount)."
     #endregion Process resources
