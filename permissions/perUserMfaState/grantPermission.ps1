@@ -32,9 +32,15 @@ function Resolve-MS-Entra-ExoError {
             }
             elseif ($ErrorObject.Exception.GetType().FullName -eq 'System.Net.WebException') {
                 if ($null -ne $ErrorObject.Exception.Response) {
+                    # Windows PowerShell 5.1 only fills ErrorDetails for a response with a Content-Length (Graph sends
+                    # chunked responses), so the body is read from the response and parsed like ErrorDetails
                     $streamReaderResponse = [System.IO.StreamReader]::new($ErrorObject.Exception.Response.GetResponseStream()).ReadToEnd()
                     if (-not [string]::IsNullOrEmpty($streamReaderResponse)) {
                         $httpErrorObj.ErrorDetails = $streamReaderResponse
+                        $parsedErrorDetails = $streamReaderResponse | ConvertFrom-Json
+                        if ($null -ne $parsedErrorDetails) {
+                            $httpErrorObj.ErrorDetails = $parsedErrorDetails
+                        }
                     }
                 }
             }
@@ -212,7 +218,7 @@ try {
                 Verbose     = $false
                 ErrorAction = 'Stop'
             }
-            $currentPerUserMfaStateResponse = Invoke-RestMethod @splatGetCurrentPerUserMfaState -Verbose:$false
+            $currentPerUserMfaStateResponse = Invoke-RestMethod @splatGetCurrentPerUserMfaState
             $currentPerUserMfaState = $currentPerUserMfaStateResponse.perUserMfaState
 
             if ($currentPerUserMfaState -eq 'disabled') {

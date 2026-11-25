@@ -31,9 +31,15 @@ function Resolve-MS-Entra-ExoError {
             }
             elseif ($ErrorObject.Exception.GetType().FullName -eq 'System.Net.WebException') {
                 if ($null -ne $ErrorObject.Exception.Response) {
+                    # Windows PowerShell 5.1 only fills ErrorDetails for a response with a Content-Length (Graph sends
+                    # chunked responses), so the body is read from the response and parsed like ErrorDetails
                     $streamReaderResponse = [System.IO.StreamReader]::new($ErrorObject.Exception.Response.GetResponseStream()).ReadToEnd()
                     if (-not [string]::IsNullOrEmpty($streamReaderResponse)) {
                         $httpErrorObj.ErrorDetails = $streamReaderResponse
+                        $parsedErrorDetails = $streamReaderResponse | ConvertFrom-Json
+                        if ($null -ne $parsedErrorDetails) {
+                            $httpErrorObj.ErrorDetails = $parsedErrorDetails
+                        }
                     }
                 }
             }
@@ -219,7 +225,17 @@ try {
                 }
                 catch {
                     $grantError = $_
-                    $grantErrorMessage = try { ($grantError.ErrorDetails.Message | ConvertFrom-Json).error.message } catch { $null }
+                    $grantErrorBody = $grantError.ErrorDetails.Message
+                    if ([string]::IsNullOrEmpty($grantErrorBody) -and $grantError.Exception.GetType().FullName -eq 'System.Net.WebException' -and $null -ne $grantError.Exception.Response) {
+                        # Windows PowerShell 5.1 only fills ErrorDetails for a response with a Content-Length (Graph sends
+                        # chunked responses). The response can be read once, so the body is kept in ErrorDetails for the error handling.
+                        $grantErrorBody = [System.IO.StreamReader]::new($grantError.Exception.Response.GetResponseStream()).ReadToEnd()
+                        $grantError.ErrorDetails = $grantErrorBody
+                    }
+                    $grantErrorMessage = $null
+                    if (-not [string]::IsNullOrEmpty($grantErrorBody)) {
+                        $grantErrorMessage = try { ($grantErrorBody | ConvertFrom-Json).error.message } catch { $null }
+                    }
                     # Already a member counts as success, any other error is rethrown with its HTTP details
                     if ($grantErrorMessage -ne 'One or more added object references already exist for the following modified properties: ''members''.') {
                         throw $grantError
