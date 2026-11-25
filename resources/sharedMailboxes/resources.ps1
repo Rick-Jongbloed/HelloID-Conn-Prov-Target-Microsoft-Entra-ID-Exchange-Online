@@ -308,7 +308,7 @@ function Assert-ExOCommandResponse {
 }
 
 function Remove-StringLatinCharacters {
-    # Removes diacritics, for example é -> e (works in PowerShell 7 without extra code pages)
+    # Removes diacritics, for example an e with an accent becomes e (works in PowerShell 5.1 and 7)
     param ([string]$String)
     $normalized = $String.Normalize([Text.NormalizationForm]::FormD)
     $builder = [System.Text.StringBuilder]::new()
