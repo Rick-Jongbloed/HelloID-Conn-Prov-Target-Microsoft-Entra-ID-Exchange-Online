@@ -231,7 +231,7 @@ try {
                 exchangeOnline = $correlatedAccountExo
             } -Force
         }
-        if ($null -ne $correlatedAccountEntra -and @($correlatedAccountExo).Count -eq 0) {
+        if ($null -ne $correlatedAccountEntra -and @($correlatedAccountExo | Where-Object { $null -ne $_ }).Count -eq 0) {
             $correlatedAccountExo = $null
             Write-Warning 'An existing MS-Entra account was found, but no mailbox is associated with it. To add a mailbox for this account, you need to assign a license.'
             $outputContext.AuditLogs.Add([PSCustomObject]@{

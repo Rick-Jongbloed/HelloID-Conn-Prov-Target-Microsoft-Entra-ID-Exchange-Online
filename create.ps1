@@ -274,7 +274,7 @@ try {
             }
             $correlatedAccountExo = Get-EXOMailbox @getExoAccountSplatParams -Verbose:$false -ErrorAction Stop
         }
-        if ($correlatedAccountEntra.Count -eq 1 -and @($correlatedAccountExo).Count -lt 1) {
+        if ($correlatedAccountEntra.Count -eq 1 -and @($correlatedAccountExo | Where-Object { $null -ne $_ }).Count -lt 1) {
             throw "An existing MS-Entra account was found, but no mailbox is associated with it. To add a mailbox for this account, you need to assign a license."
         }
     }
@@ -310,13 +310,13 @@ try {
     $actionMessage = 'calculating actions'
     if ($actionContext.Configuration.ExchangeOnlineIntegration) {
         # If Entra and Exo account found = [CorrelateAccount]
-        if (@($correlatedAccountExo).Count -eq 1) {
+        if (@($correlatedAccountExo | Where-Object { $null -ne $_ }).Count -eq 1) {
             $actionList.Add('CorrelateAccount')
             $correlatedAccountEntra = $correlatedAccountEntra | Select-Object -First 1
             $outputContext.AccountReference = $correlatedAccountExo.ExternalDirectoryObjectId
 
         }
-        elseif (@($correlatedAccountExo).Count -lt 1 -or $correlatedAccountEntraFallBack.Count -eq 1) {
+        elseif (@($correlatedAccountExo | Where-Object { $null -ne $_ }).Count -lt 1 -or $correlatedAccountEntraFallBack.Count -eq 1) {
             # If Entra and Exo account not found = [CreateAccountExo],[UpdateAccountEntraCorrelationValueAfterCreateMailbox],[UpdateAccountEntra],[UpdateAccountExo]
             # If UpdateAccountEntraCorrelationValueAfterCreateMailbox Fails the retry will skip creating the mailbox, and continue with create process
             if (-not ($correlatedAccountEntraFallBack.Count -eq 1)) {
