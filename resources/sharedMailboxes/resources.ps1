@@ -308,16 +308,10 @@ function Assert-ExOCommandResponse {
 }
 
 function Remove-StringLatinCharacters {
-    # Removes diacritics, for example an e with an accent becomes e (works in PowerShell 5.1 and 7)
+    # Removes diacritics, for example an e with an accent becomes e (works in PowerShell 5.1 and 7).
+    # Without .NET type literals, because HelloID only allows a limited set of .NET types.
     param ([string]$String)
-    $normalized = $String.Normalize([Text.NormalizationForm]::FormD)
-    $builder = [System.Text.StringBuilder]::new()
-    foreach ($character in $normalized.ToCharArray()) {
-        if ([Globalization.CharUnicodeInfo]::GetUnicodeCategory($character) -ne [Globalization.UnicodeCategory]::NonSpacingMark) {
-            [void]$builder.Append($character)
-        }
-    }
-    $builder.ToString().Normalize([Text.NormalizationForm]::FormC)
+    $String.Normalize('FormD') -replace '\p{Mn}', ''
 }
 
 function Get-SanitizedGroupName {
