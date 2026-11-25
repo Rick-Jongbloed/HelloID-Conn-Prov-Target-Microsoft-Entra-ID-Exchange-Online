@@ -26,6 +26,11 @@ All notable changes to this project will be documented in this file. The format 
 - **permissions/exchangeGroups/grantPermission.ps1** and **revokePermission.ps1**: the account reference is validated and trimmed like in the shared mailbox scripts, and DryRun is checked with `-ne $true`.
 
 ### Fixed
+- **Windows PowerShell 5.1** (found with a live test of all scripts in 5.1; PowerShell 7 behaves as before):
+  - **Resolve-MS-Entra-ExoError** (37 scripts): 5.1 only fills `ErrorDetails` for a response with a `Content-Length`, and Graph sends chunked responses. The body read from the response is now parsed like `ErrorDetails`, so the audit log shows `code: message` instead of the raw JSON.
+  - **groups** and **educationalGroups members/owners grantPermission.ps1**: "already a member/owner" was not recognised in 5.1 (same cause), so granting again failed. The body is read from the response when `ErrorDetails` is empty.
+  - **perUserMfaState grant/revoke**: `-Verbose` was passed twice (in the splat and as parameter), which 5.1 refuses; every action failed.
+  - **create.ps1** (and update, enable, disable, delete): in 5.1 a single mailbox object has no `Count`, so create with Exchange Online integration reported "no mailbox is associated" for an account with a mailbox. The mailboxes are now counted with `@(... | Where-Object { $null -ne $_ }).Count`.
 - **resources/educationalGroups/withoutActivationButton/resources.ps1**: the counter of created teams was never raised, so the maximum of 200 teams per run (`$maximumAmountToCreatePerRun`) was not applied and the audit log always said "Created [0]". Found with the lifecycle test.
 - **guestInvite/create.ps1**: the audit log "Set Manager on create is enabled, but no manager externalId is found on the person object" was added when `setManagerOnCreate` was *disabled* (the `else` belonged to the wrong `if`). It is now added only when the option is enabled and the person has no manager. Found with a live test.
 - **Entra ID scripts**: the fixes of [2.8.1](#281---2026-11-19) are included (merged from main).
