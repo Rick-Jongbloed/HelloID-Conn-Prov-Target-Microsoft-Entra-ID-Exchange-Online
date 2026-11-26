@@ -74,16 +74,17 @@ function Get-MSEntraAccessToken {
         } | ConvertTo-Json
         $base64Payload = [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($payload)).Replace('+', '-').Replace('/', '_').Replace('=', '')
 
-        if (-not $Certificate.HasPrivateKey -or -not $Certificate.PrivateKey) {
-            throw 'The certificate does not have a private key.'
+        # The RSA private key of the certificate: works for exportable and non-exportable keys (CSP and CNG)
+        if (-not $Certificate.HasPrivateKey) {
+            throw "The certificate does not have a private key."
+        }
+        $rsa = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($Certificate)
+        if ($null -eq $rsa) {
+            throw "The private key of the certificate is not an RSA key."
         }
 
-        $rsaPrivate = $Certificate.PrivateKey
-        $rsa = [System.Security.Cryptography.RSACryptoServiceProvider]::new()
-        $rsa.ImportParameters($rsaPrivate.ExportParameters($true))
-
         $signatureInput = "$base64Header.$base64Payload"
-        $signature = $rsa.SignData([Text.Encoding]::UTF8.GetBytes($signatureInput), 'SHA256')
+        $signature = $rsa.SignData([Text.Encoding]::UTF8.GetBytes($signatureInput), [System.Security.Cryptography.HashAlgorithmName]::SHA256, [System.Security.Cryptography.RSASignaturePadding]::Pkcs1)
         $base64Signature = [System.Convert]::ToBase64String($signature).Replace('+', '-').Replace('/', '_').Replace('=', '')
 
         $jwtToken = "$($base64Header).$($base64Payload).$($base64Signature)"

@@ -103,20 +103,19 @@ function Get-MSEntraAccessToken {
         } | ConvertTo-Json
         $base64Payload = [System.Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($payload)).Replace('+', '-').Replace('/', '_').Replace('=', '')
 
-        # Extract the private key from the certificate
-        $rsaPrivate = $Certificate.PrivateKey
-        $rsa = [System.Security.Cryptography.RSACryptoServiceProvider]::new()
-        $rsa.ImportParameters($rsaPrivate.ExportParameters($true))
+        # The RSA private key of the certificate: works for exportable and non-exportable keys (CSP and CNG)
+        if (-not $Certificate.HasPrivateKey) {
+            throw "The certificate does not have a private key."
+        }
+        $rsa = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($Certificate)
+        if ($null -eq $rsa) {
+            throw "The private key of the certificate is not an RSA key."
+        }
 
         # Sign the JWT
         $signatureInput = "$base64Header.$base64Payload"
-        $signature = $rsa.SignData([Text.Encoding]::UTF8.GetBytes($signatureInput), 'SHA256')
+        $signature = $rsa.SignData([Text.Encoding]::UTF8.GetBytes($signatureInput), [System.Security.Cryptography.HashAlgorithmName]::SHA256, [System.Security.Cryptography.RSASignaturePadding]::Pkcs1)
         $base64Signature = [System.Convert]::ToBase64String($signature).Replace('+', '-').Replace('/', '_').Replace('=', '')
-
-        # Ensure the certificate has a private key
-        if (-not $Certificate.HasPrivateKey -or -not $Certificate.PrivateKey) {
-            throw "The certificate does not have a private key."
-        }
 
         # Create the JWT token
         $jwtToken = "$($base64Header).$($base64Payload).$($base64Signature)"
@@ -359,12 +358,8 @@ try {
         $getMicrosoftTeamsResult = $null
         $getMicrosoftTeamsResult = Invoke-RestMethod @getMicrosoftTeamsSplatParams
     
-        if ($getMicrosoftTeamsResult.Value -is [array]) {
-            [void]$microsoftTeams.AddRange($getMicrosoftTeamsResult.Value)
-        }
-        else {
-            [void]$microsoftTeams.Add($getMicrosoftTeamsResult.Value)
-        }
+        # @() also makes a single item a list, so one AddRange is enough
+        [void]$microsoftTeams.AddRange(@($getMicrosoftTeamsResult.Value))
     } while (-not[string]::IsNullOrEmpty($getMicrosoftTeamsResult.'@odata.nextLink'))
 
     Write-Information "Queried Microsoft Teams. Result count: $(($microsoftTeams | Measure-Object).Count)"
